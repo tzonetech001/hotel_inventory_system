@@ -7,7 +7,6 @@ require_once '../includes/auth_check.php';
 checkAuth(['Hotel Manager']);
 
 $user_id = $_SESSION['user_id'];
-$success = '';
 $error = '';
 
 // Handle approval/rejection
@@ -17,10 +16,10 @@ if (isset($_GET['id']) && isset($_GET['action'])) {
     
     if ($action == 'approve') {
         $status = 'approved';
-        $message = "Purchase order approved by manager";
+        $message = "approved";
     } elseif ($action == 'reject') {
         $status = 'rejected';
-        $message = "Purchase order rejected by manager";
+        $message = "rejected";
     }
     
     if (isset($status)) {
@@ -30,7 +29,10 @@ if (isset($_GET['id']) && isset($_GET['action'])) {
         
         if ($stmt->execute()) {
             logActivity($user_id, 'Approve PO', "Purchase order ID: $po_id - $message");
-            $success = "Purchase order $message successfully!";
+            $_SESSION['toast_message'] = "Purchase order $message successfully!";
+            $_SESSION['toast_type'] = "success";
+            header("Location: approve_po.php");
+            exit();
         } else {
             $error = "Error updating purchase order!";
         }
@@ -58,71 +60,81 @@ include '../templates/sidebar.php';
         <p>Review and approve purchase orders from procurement</p>
     </div>
     
-    <?php if($success): ?>
-        <div class="alert-success">
-            <i class="fas fa-check-circle"></i> <?php echo $success; ?>
-        </div>
+    <?php if($error): ?>
+        <script>showToast('<?php echo addslashes($error); ?>', 'error');</script>
     <?php endif; ?>
     
-    <?php if($error): ?>
-        <div class="alert-error">
-            <i class="fas fa-exclamation-circle"></i> <?php echo $error; ?>
+    <div class="stats-summary">
+        <div class="stat-item">
+            <div class="stat-label">Pending Approvals</div>
+            <div class="stat-number"><?php echo count($pending_orders); ?></div>
         </div>
-    <?php endif; ?>
+        <div class="stat-item">
+            <div class="stat-label">Total Value Pending</div>
+            <div class="stat-number">
+                TZS <?php 
+                    $total = 0;
+                    foreach($pending_orders as $order) { $total += $order['total_amount']; }
+                    echo number_format($total, 2);
+                ?>
+            </div>
+        </div>
+    </div>
     
     <div class="card">
         <div class="card-header">
-            <h3>Pending Approvals (<?php echo count($pending_orders); ?>)</h3>
+            <h3><i class="fas fa-clock"></i> Pending Approvals (<?php echo count($pending_orders); ?>)</h3>
         </div>
         <div class="card-body">
             <?php if(count($pending_orders) > 0): ?>
-                <?php foreach($pending_orders as $order): ?>
-                    <div class="approval-card">
-                        <div class="approval-header">
-                            <div class="po-info">
-                                <strong class="po-number"><?php echo $order['po_number']; ?></strong>
-                                <span class="po-date">Created: <?php echo date('d/m/Y H:i', strtotime($order['created_at'])); ?></span>
+                <div class="approval-grid">
+                    <?php foreach($pending_orders as $order): ?>
+                        <div class="approval-card">
+                            <div class="approval-header">
+                                <div class="po-number"><?php echo $order['po_number']; ?></div>
+                                <div class="po-date"><?php echo date('d M Y', strtotime($order['order_date'])); ?></div>
                             </div>
-                            <div class="po-amount">
-                                Total: TZS <?php echo number_format($order['total_amount'], 2); ?>
-                            </div>
-                        </div>
-                        <div class="approval-body">
-                            <div class="info-row">
-                                <span class="label">Supplier:</span>
-                                <span><?php echo htmlspecialchars($order['supplier_name']); ?></span>
-                            </div>
-                            <div class="info-row">
-                                <span class="label">Requested By:</span>
-                                <span><?php echo htmlspecialchars($order['created_by_name']); ?></span>
-                            </div>
-                            <div class="info-row">
-                                <span class="label">Expected Delivery:</span>
-                                <span><?php echo $order['expected_delivery'] ? date('d/m/Y', strtotime($order['expected_delivery'])) : 'Not specified'; ?></span>
-                            </div>
-                            <?php if($order['notes']): ?>
+                            <div class="approval-body">
                                 <div class="info-row">
-                                    <span class="label">Notes:</span>
-                                    <span><?php echo htmlspecialchars($order['notes']); ?></span>
+                                    <span class="label">Supplier:</span>
+                                    <span class="value"><?php echo htmlspecialchars($order['supplier_name']); ?></span>
                                 </div>
-                            <?php endif; ?>
+                                <div class="info-row">
+                                    <span class="label">Requested By:</span>
+                                    <span class="value"><?php echo htmlspecialchars($order['created_by_name']); ?></span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="label">Amount:</span>
+                                    <span class="value amount">TZS <?php echo number_format($order['total_amount'], 2); ?></span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="label">Expected:</span>
+                                    <span class="value"><?php echo $order['expected_delivery'] ? date('d M Y', strtotime($order['expected_delivery'])) : 'Not specified'; ?></span>
+                                </div>
+                                <?php if($order['notes']): ?>
+                                    <div class="info-row notes">
+                                        <span class="label">Notes:</span>
+                                        <span class="value"><?php echo htmlspecialchars(substr($order['notes'], 0, 100)); ?></span>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="approval-actions">
+                                <button onclick="viewOrderDetails(<?php echo $order['id']; ?>)" class="btn-secondary">
+                                    <i class="fas fa-eye"></i> Details
+                                </button>
+                                <button onclick="approveOrder(<?php echo $order['id']; ?>)" class="btn-approve">
+                                    <i class="fas fa-check"></i> Approve
+                                </button>
+                                <button onclick="rejectOrder(<?php echo $order['id']; ?>)" class="btn-reject">
+                                    <i class="fas fa-times"></i> Reject
+                                </button>
+                            </div>
                         </div>
-                        <div class="approval-actions">
-                            <button onclick="viewOrderDetails(<?php echo $order['id']; ?>)" class="btn-secondary">
-                                <i class="fas fa-eye"></i> View Details
-                            </button>
-                            <button onclick="approveOrder(<?php echo $order['id']; ?>)" class="btn-approve">
-                                <i class="fas fa-check"></i> Approve
-                            </button>
-                            <button onclick="rejectOrder(<?php echo $order['id']; ?>)" class="btn-reject">
-                                <i class="fas fa-times"></i> Reject
-                            </button>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
+                    <?php endforeach; ?>
+                </div>
             <?php else: ?>
                 <div class="empty-state">
-                    <i class="fas fa-check-circle" style="font-size: 48px; color: #10B981;"></i>
+                    <i class="fas fa-check-circle"></i>
                     <p>No pending purchase orders to approve!</p>
                 </div>
             <?php endif; ?>
@@ -130,11 +142,12 @@ include '../templates/sidebar.php';
     </div>
 </div>
 
+<!-- Order Details Modal -->
 <div id="orderModal" class="modal">
     <div class="modal-content modal-large">
         <div class="modal-header">
-            <h3>Order Details</h3>
-            <span class="close">&times;</span>
+            <h3><i class="fas fa-file-invoice"></i> Order Details</h3>
+            <span class="close" onclick="closeModal()">&times;</span>
         </div>
         <div class="modal-body" id="orderModalBody">
             <!-- Content loaded via AJAX -->
@@ -143,16 +156,51 @@ include '../templates/sidebar.php';
 </div>
 
 <style>
-    .approval-card {
-        border: 1px solid #E5E7EB;
+    .stats-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        margin-bottom: 25px;
+    }
+    
+    .stat-item {
+        background: white;
+        padding: 20px;
         border-radius: 12px;
-        margin-bottom: 20px;
+        text-align: center;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .stat-label {
+        font-size: 13px;
+        color: #6B7280;
+        margin-bottom: 8px;
+    }
+    
+    .stat-number {
+        font-size: 28px;
+        font-weight: 700;
+        color: #1E3A8A;
+    }
+    
+    .approval-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+        gap: 20px;
+    }
+    
+    .approval-card {
+        background: white;
+        border-radius: 12px;
         overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         transition: all 0.3s;
+        border: 1px solid #E5E7EB;
     }
     
     .approval-card:hover {
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
     
     .approval-header {
@@ -165,36 +213,45 @@ include '../templates/sidebar.php';
     }
     
     .po-number {
-        font-size: 18px;
+        font-size: 16px;
+        font-weight: 700;
         color: #1E3A8A;
     }
     
     .po-date {
         font-size: 12px;
         color: #6B7280;
-        margin-left: 15px;
-    }
-    
-    .po-amount {
-        font-size: 18px;
-        font-weight: 700;
-        color: #1E3A8A;
     }
     
     .approval-body {
         padding: 20px;
-        background: white;
     }
     
     .info-row {
-        margin-bottom: 10px;
         display: flex;
+        margin-bottom: 12px;
+        font-size: 13px;
     }
     
     .info-row .label {
-        width: 130px;
+        width: 100px;
         font-weight: 600;
+        color: #6B7280;
+    }
+    
+    .info-row .value {
+        flex: 1;
         color: #374151;
+    }
+    
+    .info-row .value.amount {
+        font-weight: 700;
+        color: #1E3A8A;
+    }
+    
+    .info-row.notes .value {
+        color: #6B7280;
+        font-style: italic;
     }
     
     .approval-actions {
@@ -202,7 +259,7 @@ include '../templates/sidebar.php';
         background: #F9FAFB;
         border-top: 1px solid #E5E7EB;
         display: flex;
-        gap: 15px;
+        gap: 10px;
     }
     
     .btn-approve {
@@ -210,13 +267,15 @@ include '../templates/sidebar.php';
         color: white;
         padding: 8px 20px;
         border: none;
-        border-radius: 6px;
+        border-radius: 8px;
         cursor: pointer;
         transition: all 0.3s;
+        font-weight: 500;
     }
     
     .btn-approve:hover {
         background: #059669;
+        transform: translateY(-1px);
     }
     
     .btn-reject {
@@ -224,13 +283,15 @@ include '../templates/sidebar.php';
         color: white;
         padding: 8px 20px;
         border: none;
-        border-radius: 6px;
+        border-radius: 8px;
         cursor: pointer;
         transition: all 0.3s;
+        font-weight: 500;
     }
     
     .btn-reject:hover {
         background: #DC2626;
+        transform: translateY(-1px);
     }
     
     .empty-state {
@@ -238,9 +299,125 @@ include '../templates/sidebar.php';
         padding: 60px 20px;
     }
     
+    .empty-state i {
+        font-size: 48px;
+        color: #10B981;
+        margin-bottom: 15px;
+    }
+    
     .empty-state p {
-        margin-top: 15px;
         color: #6B7280;
+    }
+    
+    /* Modal */
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.5);
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .modal-content {
+        background: white;
+        border-radius: 16px;
+        width: 90%;
+        max-width: 800px;
+        max-height: 80vh;
+        overflow-y: auto;
+        animation: modalSlideIn 0.3s ease;
+    }
+    
+    .modal-large {
+        max-width: 800px;
+    }
+    
+    @keyframes modalSlideIn {
+        from {
+            opacity: 0;
+            transform: translateY(-50px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    .modal-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid #E5E7EB;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #F9FAFB;
+        border-radius: 16px 16px 0 0;
+    }
+    
+    .modal-header h3 {
+        margin: 0;
+        color: #1E3A8A;
+    }
+    
+    .modal-header .close {
+        font-size: 28px;
+        cursor: pointer;
+        color: #9CA3AF;
+        transition: color 0.3s;
+    }
+    
+    .modal-header .close:hover {
+        color: #EF4444;
+    }
+    
+    .modal-body {
+        padding: 24px;
+    }
+    
+    .po-items-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+    }
+    
+    .po-items-table th,
+    .po-items-table td {
+        padding: 10px;
+        text-align: left;
+        border-bottom: 1px solid #E5E7EB;
+    }
+    
+    .po-items-table th {
+        background: #F3F4F6;
+        font-weight: 600;
+    }
+    
+    @media (max-width: 768px) {
+        .approval-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .info-row {
+            flex-direction: column;
+        }
+        
+        .info-row .label {
+            width: auto;
+            margin-bottom: 4px;
+        }
+        
+        .approval-actions {
+            flex-wrap: wrap;
+        }
+        
+        .btn-approve, .btn-reject, .btn-secondary {
+            flex: 1;
+            text-align: center;
+        }
     }
 </style>
 
@@ -263,13 +440,16 @@ function viewOrderDetails(id) {
             
             document.getElementById('orderModalBody').innerHTML = `
                 <div class="po-details">
-                    <div class="po-header">
-                        <strong>PO Number:</strong> ${data.po.po_number}<br>
-                        <strong>Supplier:</strong> ${data.po.supplier_name}<br>
-                        <strong>Total Amount:</strong> TZS ${parseFloat(data.po.total_amount).toLocaleString()}
+                    <div style="background: #F0F9FF; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                        <p><strong>PO Number:</strong> ${data.po.po_number}</p>
+                        <p><strong>Supplier:</strong> ${data.po.supplier_name}</p>
+                        <p><strong>Contact:</strong> ${data.po.contact_person || 'N/A'} | ${data.po.supplier_phone || 'N/A'}</p>
+                        <p><strong>Total Amount:</strong> <strong style="color: #1E3A8A;">TZS ${parseFloat(data.po.total_amount).toLocaleString()}</strong></p>
+                        <p><strong>Expected Delivery:</strong> ${data.po.expected_delivery || 'Not specified'}</p>
+                        ${data.po.notes ? `<p><strong>Notes:</strong> ${data.po.notes}</p>` : ''}
                     </div>
                     
-                    <h4>Items to Purchase</h4>
+                    <h4 style="margin-bottom: 10px;">Items to Purchase</h4>
                     <table class="po-items-table">
                         <thead>
                             <tr>
@@ -285,29 +465,30 @@ function viewOrderDetails(id) {
                     </table>
                 </div>
             `;
-            document.getElementById('orderModal').style.display = 'block';
+            document.getElementById('orderModal').style.display = 'flex';
         });
 }
 
 function approveOrder(id) {
-    if (confirm('Are you sure you want to APPROVE this purchase order? This will allow procurement to proceed with the order.')) {
+    if (confirm('Are you sure you want to APPROVE this purchase order?')) {
         window.location.href = `approve_po.php?id=${id}&action=approve`;
     }
 }
 
 function rejectOrder(id) {
-    if (confirm('Are you sure you want to REJECT this purchase order? You may need to provide a reason to procurement.')) {
+    if (confirm('Are you sure you want to REJECT this purchase order?')) {
         window.location.href = `approve_po.php?id=${id}&action=reject`;
     }
 }
 
-document.querySelector('.close').onclick = function() {
+function closeModal() {
     document.getElementById('orderModal').style.display = 'none';
 }
 
 window.onclick = function(event) {
-    if (event.target == document.getElementById('orderModal')) {
-        document.getElementById('orderModal').style.display = 'none';
+    const modal = document.getElementById('orderModal');
+    if (event.target === modal) {
+        closeModal();
     }
 }
 </script>
