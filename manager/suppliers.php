@@ -4,13 +4,14 @@ require_once '../includes/db_connection.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth_check.php';
 
+// Allow access to Hotel Manager, Admin, and Procurement Officer
 checkAuth(['Hotel Manager', 'Admin', 'Procurement Officer']);
 
 $user_id = $_SESSION['user_id'];
-$error = '';
+$user_role = $_SESSION['role'];
 
 // ============================================
-// HANDLE ADD SUPPLIER (AJAX/POST)
+// HANDLE ADD SUPPLIER
 // ============================================
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_supplier'])) {
     $company_name = trim($_POST['company_name']);
@@ -18,22 +19,48 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_supplier'])) {
     $email = trim($_POST['email']);
     $phone = trim($_POST['phone']);
     $address = trim($_POST['address']);
+    $password = $_POST['password'];
+    $confirm_password = $_POST['confirm_password'];
     
     if (empty($company_name)) {
         $_SESSION['toast_message'] = "Company name is required!";
         $_SESSION['toast_type'] = "error";
+    } elseif (empty($password) || empty($confirm_password)) {
+        $_SESSION['toast_message'] = "Password is required!";
+        $_SESSION['toast_type'] = "error";
+    } elseif ($password !== $confirm_password) {
+        $_SESSION['toast_message'] = "Passwords do not match!";
+        $_SESSION['toast_type'] = "error";
+    } elseif (strlen($password) < 6) {
+        $_SESSION['toast_message'] = "Password must be at least 6 characters!";
+        $_SESSION['toast_type'] = "error";
     } else {
-        $sql = "INSERT INTO suppliers (company_name, contact_person, email, phone, address) VALUES (?, ?, ?, ?, ?)";
-        $stmt = $db->prepare($sql);
-        $stmt->bind_param("sssss", $company_name, $contact_person, $email, $phone, $address);
+        // Check if email already exists
+        $check_sql = "SELECT id FROM suppliers WHERE email = ?";
+        $check_stmt = $db->prepare($check_sql);
+        $check_stmt->bind_param("s", $email);
+        $check_stmt->execute();
+        $check_result = $check_stmt->get_result();
         
-        if ($stmt->execute()) {
-            logActivity($user_id, 'Add Supplier', "Added new supplier: $company_name");
-            $_SESSION['toast_message'] = "Supplier <strong>" . htmlspecialchars($company_name) . "</strong> added successfully!";
-            $_SESSION['toast_type'] = "success";
-        } else {
-            $_SESSION['toast_message'] = "Error adding supplier!";
+        if ($check_result->num_rows > 0) {
+            $_SESSION['toast_message'] = "Email already exists!";
             $_SESSION['toast_type'] = "error";
+        } else {
+            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+            
+            $sql = "INSERT INTO suppliers (company_name, contact_person, email, phone, address, password) 
+                    VALUES (?, ?, ?, ?, ?, ?)";
+            $stmt = $db->prepare($sql);
+            $stmt->bind_param("ssssss", $company_name, $contact_person, $email, $phone, $address, $hashed_password);
+            
+            if ($stmt->execute()) {
+                logActivity($user_id, 'Add Supplier', "Added new supplier: $company_name");
+                $_SESSION['toast_message'] = "Supplier <strong>" . htmlspecialchars($company_name) . "</strong> added successfully!";
+                $_SESSION['toast_type'] = "success";
+            } else {
+                $_SESSION['toast_message'] = "Error adding supplier!";
+                $_SESSION['toast_type'] = "error";
+            }
         }
     }
     header("Location: suppliers.php");
@@ -50,14 +77,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_supplier'])) {
     $email = trim($_POST['email']);
     $phone = trim($_POST['phone']);
     $address = trim($_POST['address']);
+    $status = $_POST['status'];
+    $password = $_POST['password'];
+    $confirm_password = $_POST['confirm_password'];
     
     if (empty($company_name)) {
         $_SESSION['toast_message'] = "Company name is required!";
         $_SESSION['toast_type'] = "error";
+    } elseif (!empty($password) && $password !== $confirm_password) {
+        $_SESSION['toast_message'] = "Passwords do not match!";
+        $_SESSION['toast_type'] = "error";
+    } elseif (!empty($password) && strlen($password) < 6) {
+        $_SESSION['toast_message'] = "Password must be at least 6 characters!";
+        $_SESSION['toast_type'] = "error";
     } else {
-        $sql = "UPDATE suppliers SET company_name = ?, contact_person = ?, email = ?, phone = ?, address = ? WHERE id = ?";
-        $stmt = $db->prepare($sql);
-        $stmt->bind_param("sssssi", $company_name, $contact_person, $email, $phone, $address, $supplier_id);
+        if (!empty($password)) {
+            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+            $sql = "UPDATE suppliers SET company_name = ?, contact_person = ?, email = ?, phone = ?, address = ?, status = ?, password = ? WHERE id = ?";
+            $stmt = $db->prepare($sql);
+            $stmt->bind_param("sssssssi", $company_name, $contact_person, $email, $phone, $address, $status, $hashed_password, $supplier_id);
+        } else {
+            $sql = "UPDATE suppliers SET company_name = ?, contact_person = ?, email = ?, phone = ?, address = ?, status = ? WHERE id = ?";
+            $stmt = $db->prepare($sql);
+            $stmt->bind_param("ssssssi", $company_name, $contact_person, $email, $phone, $address, $status, $supplier_id);
+        }
         
         if ($stmt->execute()) {
             logActivity($user_id, 'Update Supplier', "Updated supplier: $company_name");
@@ -133,6 +176,40 @@ if (isset($_GET['toggle'])) {
 }
 
 // ============================================
+// HANDLE RESET PASSWORD
+// ============================================
+if (isset($_GET['reset_password'])) {
+    $reset_id = intval($_GET['reset_password']);
+    
+    // Set default password to "123456"
+    $new_password = "123456";
+    $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
+    
+    $sql = "UPDATE suppliers SET password = ? WHERE id = ?";
+    $stmt = $db->prepare($sql);
+    $stmt->bind_param("si", $hashed_password, $reset_id);
+    
+    if ($stmt->execute()) {
+        // Get supplier details
+        $supplier_sql = "SELECT company_name, email FROM suppliers WHERE id = ?";
+        $supplier_stmt = $db->prepare($supplier_sql);
+        $supplier_stmt->bind_param("i", $reset_id);
+        $supplier_stmt->execute();
+        $supplier_result = $supplier_stmt->get_result();
+        $supplier_data = $supplier_result->fetch_assoc();
+        
+        logActivity($user_id, 'Reset Supplier Password', "Reset password for supplier: {$supplier_data['company_name']}");
+        $_SESSION['toast_message'] = "Password reset for <strong>" . htmlspecialchars($supplier_data['company_name']) . "</strong>! New password: <code>123456</code>";
+        $_SESSION['toast_type'] = "success";
+    } else {
+        $_SESSION['toast_message'] = "Error resetting password!";
+        $_SESSION['toast_type'] = "error";
+    }
+    header("Location: suppliers.php");
+    exit();
+}
+
+// ============================================
 // GET SUPPLIER FOR EDIT (AJAX)
 // ============================================
 if (isset($_GET['get_supplier'])) {
@@ -150,7 +227,7 @@ if (isset($_GET['get_supplier'])) {
 }
 
 // ============================================
-// GET ALL SUPPLIERS
+// GET ALL SUPPLIERS WITH SEARCH
 // ============================================
 $search = $_GET['search'] ?? '';
 $status_filter = $_GET['status'] ?? '';
@@ -179,22 +256,53 @@ include '../templates/sidebar.php';
         <p>Manage your hotel's suppliers and vendors</p>
     </div>
     
+    <!-- Stats Summary -->
+    <div class="stats-summary">
+        <div class="stat-item">
+            <div class="stat-icon total">
+                <i class="fas fa-building"></i>
+            </div>
+            <div class="stat-info">
+                <div class="stat-label">Total Suppliers</div>
+                <div class="stat-number" id="totalSuppliers"><?php echo count($suppliers); ?></div>
+            </div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-icon active">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            <div class="stat-info">
+                <div class="stat-label">Active Suppliers</div>
+                <div class="stat-number" id="activeSuppliers">
+                    <?php 
+                        $active_count = 0;
+                        foreach($suppliers as $s) {
+                            if($s['status'] == 'active') $active_count++;
+                        }
+                        echo $active_count;
+                    ?>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <!-- Search and Filter Bar -->
     <div class="search-filter-bar">
-        <form method="GET" action="" class="search-form">
+        <form method="GET" action="" class="search-form" id="filterForm">
             <div class="search-box">
                 <i class="fas fa-search"></i>
-                <input type="text" name="search" placeholder="Search by company, contact, email or phone..." value="<?php echo htmlspecialchars($search); ?>">
+                <input type="text" name="search" id="searchInput" placeholder="Search by company, contact, email or phone..." 
+                       value="<?php echo htmlspecialchars($search); ?>" autocomplete="off">
             </div>
             <div class="filter-box">
-                <select name="status" onchange="this.form.submit()">
+                <select name="status" id="statusFilter" onchange="this.form.submit()">
                     <option value="">All Status</option>
                     <option value="active" <?php echo $status_filter == 'active' ? 'selected' : ''; ?>>Active</option>
                     <option value="inactive" <?php echo $status_filter == 'inactive' ? 'selected' : ''; ?>>Inactive</option>
                 </select>
             </div>
             <?php if(!empty($search) || !empty($status_filter)): ?>
-                <a href="suppliers.php" class="btn-clear">
+                <a href="suppliers.php" class="btn-clear" id="clearFilters">
                     <i class="fas fa-times"></i> Clear
                 </a>
             <?php endif; ?>
@@ -205,10 +313,10 @@ include '../templates/sidebar.php';
     </div>
     
     <!-- Suppliers Grid -->
-    <div class="suppliers-grid">
+    <div class="suppliers-grid" id="suppliersGrid">
         <?php if(count($suppliers) > 0): ?>
-            <?php foreach($suppliers as $supplier): ?>
-                <div class="supplier-card" data-id="<?php echo $supplier['id']; ?>">
+            <?php foreach($suppliers as $index => $supplier): ?>
+                <div class="supplier-card" data-id="<?php echo $supplier['id']; ?>" data-index="<?php echo $index; ?>">
                     <div class="supplier-card-header">
                         <div class="supplier-avatar">
                             <i class="fas fa-building"></i>
@@ -237,19 +345,23 @@ include '../templates/sidebar.php';
                         <?php if($supplier['address']): ?>
                             <div class="supplier-address">
                                 <i class="fas fa-map-marker-alt"></i> <?php echo htmlspecialchars(substr($supplier['address'], 0, 60)); ?>
+                                <?php if(strlen($supplier['address']) > 60): ?>...<?php endif; ?>
                             </div>
                         <?php endif; ?>
                     </div>
                     <div class="supplier-card-footer">
-                        <button onclick="editSupplier(<?php echo $supplier['id']; ?>)" class="btn-icon edit" title="Edit Supplier">
+                        <button class="btn-icon edit" onclick="editSupplier(<?php echo $supplier['id']; ?>)" title="Edit Supplier">
                             <i class="fas fa-edit"></i>
                         </button>
-                        <a href="?toggle=<?php echo $supplier['id']; ?>" class="btn-icon toggle" title="Toggle Status" onclick="return confirm('Change status for <?php echo addslashes($supplier['company_name']); ?>?')">
+                        <button class="btn-icon key" onclick="resetSupplierPassword(<?php echo $supplier['id']; ?>)" title="Reset Password">
+                            <i class="fas fa-key"></i>
+                        </button>
+                        <button class="btn-icon toggle" onclick="toggleSupplierStatus(<?php echo $supplier['id']; ?>)" title="Toggle Status">
                             <i class="fas fa-power-off"></i>
-                        </a>
-                        <a href="?delete=<?php echo $supplier['id']; ?>" class="btn-icon delete" title="Delete Supplier" onclick="return confirm('Delete <?php echo addslashes($supplier['company_name']); ?>? This will affect related records!')">
+                        </button>
+                        <button class="btn-icon delete" onclick="deleteSupplier(<?php echo $supplier['id']; ?>)" title="Delete Supplier">
                             <i class="fas fa-trash"></i>
-                        </a>
+                        </button>
                     </div>
                 </div>
             <?php endforeach; ?>
@@ -283,29 +395,58 @@ include '../templates/sidebar.php';
                 
                 <div class="form-group">
                     <label><i class="fas fa-building"></i> Company Name <span class="required">*</span></label>
-                    <input type="text" name="company_name" id="company_name" placeholder="Enter company name" required>
+                    <input type="text" name="company_name" id="company_name" placeholder="Enter company name" required autocomplete="off">
                 </div>
                 
                 <div class="form-group">
                     <label><i class="fas fa-user"></i> Contact Person</label>
-                    <input type="text" name="contact_person" id="contact_person" placeholder="Enter contact person name">
+                    <input type="text" name="contact_person" id="contact_person" placeholder="Enter contact person name" autocomplete="off">
                 </div>
                 
                 <div class="form-row">
                     <div class="form-group">
                         <label><i class="fas fa-envelope"></i> Email</label>
-                        <input type="email" name="email" id="email" placeholder="company@example.com">
+                        <input type="email" name="email" id="email" placeholder="company@example.com" autocomplete="off">
                     </div>
                     
                     <div class="form-group">
                         <label><i class="fas fa-phone"></i> Phone</label>
-                        <input type="tel" name="phone" id="phone" placeholder="Enter phone number">
+                        <input type="tel" name="phone" id="phone" placeholder="Enter phone number" autocomplete="off">
                     </div>
                 </div>
                 
                 <div class="form-group">
                     <label><i class="fas fa-map-marker-alt"></i> Address</label>
                     <textarea name="address" id="address" rows="3" placeholder="Enter full address"></textarea>
+                </div>
+                
+                <div class="password-section" id="passwordSection">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label><i class="fas fa-lock"></i> Password <span class="required" id="passwordRequired">*</span></label>
+                            <div class="password-wrapper">
+                                <input type="password" name="password" id="password" placeholder="Enter password" autocomplete="off">
+                                <i class="fas fa-eye toggle-password" data-target="password"></i>
+                            </div>
+                            <small>Minimum 6 characters</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label><i class="fas fa-lock"></i> Confirm Password <span class="required" id="confirmRequired">*</span></label>
+                            <div class="password-wrapper">
+                                <input type="password" name="confirm_password" id="confirm_password" placeholder="Confirm password" autocomplete="off">
+                                <i class="fas fa-eye toggle-password" data-target="confirm_password"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group" id="statusSection" style="display: none;">
+                    <label><i class="fas fa-toggle-on"></i> Status</label>
+                    <select name="status" id="status">
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
                 </div>
                 
                 <div class="form-actions">
@@ -322,6 +463,61 @@ include '../templates/sidebar.php';
 </div>
 
 <style>
+    /* Stats Summary */
+    .stats-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 20px;
+        margin-bottom: 25px;
+    }
+    
+    .stat-item {
+        background: white;
+        border-radius: 16px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
+    }
+    
+    .stat-item:hover {
+        transform: translateY(-2px);
+    }
+    
+    .stat-icon {
+        width: 50px;
+        height: 50px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+    }
+    
+    .stat-icon.total {
+        background: #1E3A8A20;
+        color: #1E3A8A;
+    }
+    
+    .stat-icon.active {
+        background: #D1FAE5;
+        color: #10B981;
+    }
+    
+    .stat-info .stat-label {
+        font-size: 13px;
+        color: #6B7280;
+        margin-bottom: 5px;
+    }
+    
+    .stat-info .stat-number {
+        font-size: 28px;
+        font-weight: 700;
+        color: #1E3A8A;
+    }
+    
     /* Search and Filter Bar */
     .search-filter-bar {
         background: white;
@@ -409,7 +605,7 @@ include '../templates/sidebar.php';
     /* Suppliers Grid */
     .suppliers-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
         gap: 25px;
     }
     
@@ -420,7 +616,6 @@ include '../templates/sidebar.php';
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         transition: all 0.3s;
         animation: fadeInUp 0.4s ease backwards;
-        position: relative;
     }
     
     .supplier-card:hover {
@@ -439,13 +634,28 @@ include '../templates/sidebar.php';
         }
     }
     
+    /* Delete animation */
+    @keyframes fadeOutLeft {
+        from {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        to {
+            opacity: 0;
+            transform: translateX(-30px);
+        }
+    }
+    
+    .supplier-card.deleting {
+        animation: fadeOutLeft 0.3s ease forwards;
+    }
+    
     .supplier-card-header {
         background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
         padding: 20px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        position: relative;
     }
     
     .supplier-avatar {
@@ -525,8 +735,52 @@ include '../templates/sidebar.php';
         background: #F9FAFB;
         border-top: 1px solid #E5E7EB;
         display: flex;
-        gap: 10px;
+        gap: 8px;
         justify-content: flex-end;
+    }
+    
+    /* Action Buttons */
+    .btn-icon {
+        width: 34px;
+        height: 34px;
+        background: white;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+        transition: all 0.3s;
+        color: #6B7280;
+        border: 1px solid #E5E7EB;
+        cursor: pointer;
+    }
+    
+    .btn-icon:hover {
+        transform: translateY(-2px);
+    }
+    
+    .btn-icon.edit:hover {
+        background: #DBEAFE;
+        color: #1E3A8A;
+        border-color: #1E3A8A;
+    }
+    
+    .btn-icon.key:hover {
+        background: #FEF3C7;
+        color: #D97706;
+        border-color: #D97706;
+    }
+    
+    .btn-icon.toggle:hover {
+        background: #FEE2E2;
+        color: #EF4444;
+        border-color: #EF4444;
+    }
+    
+    .btn-icon.delete:hover {
+        background: #FEE2E2;
+        color: #DC2626;
+        border-color: #DC2626;
     }
     
     /* Floating Action Button */
@@ -578,7 +832,9 @@ include '../templates/sidebar.php';
         background: white;
         border-radius: 20px;
         width: 90%;
-        max-width: 500px;
+        max-width: 520px;
+        max-height: 85vh;
+        overflow-y: auto;
         animation: modalSlideIn 0.3s ease;
         box-shadow: 0 20px 40px rgba(0,0,0,0.2);
     }
@@ -586,7 +842,7 @@ include '../templates/sidebar.php';
     @keyframes modalSlideIn {
         from {
             opacity: 0;
-            transform: translateY(-50px) scale(0.9);
+            transform: translateY(-50px) scale(0.95);
         }
         to {
             opacity: 1;
@@ -602,6 +858,9 @@ include '../templates/sidebar.php';
         align-items: center;
         background: #F9FAFB;
         border-radius: 20px 20px 0 0;
+        position: sticky;
+        top: 0;
+        z-index: 10;
     }
     
     .modal-header h3 {
@@ -672,6 +931,28 @@ include '../templates/sidebar.php';
         gap: 15px;
     }
     
+    .password-wrapper {
+        position: relative;
+    }
+    
+    .password-wrapper input {
+        padding-right: 40px;
+    }
+    
+    .toggle-password {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        cursor: pointer;
+        color: #9CA3AF;
+        transition: color 0.3s;
+    }
+    
+    .toggle-password:hover {
+        color: #1E3A8A;
+    }
+    
     .form-actions {
         display: flex;
         gap: 12px;
@@ -715,44 +996,6 @@ include '../templates/sidebar.php';
         background: #E5E7EB;
     }
     
-    /* Action Buttons */
-    .btn-icon {
-        width: 34px;
-        height: 34px;
-        background: white;
-        border-radius: 8px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        text-decoration: none;
-        transition: all 0.3s;
-        color: #6B7280;
-        border: 1px solid #E5E7EB;
-        cursor: pointer;
-    }
-    
-    .btn-icon:hover {
-        transform: translateY(-2px);
-    }
-    
-    .btn-icon.edit:hover {
-        background: #DBEAFE;
-        color: #1E3A8A;
-        border-color: #1E3A8A;
-    }
-    
-    .btn-icon.toggle:hover {
-        background: #FEF3C7;
-        color: #D97706;
-        border-color: #D97706;
-    }
-    
-    .btn-icon.delete:hover {
-        background: #FEE2E2;
-        color: #DC2626;
-        border-color: #DC2626;
-    }
-    
     /* Empty State */
     .empty-state {
         grid-column: 1 / -1;
@@ -776,6 +1019,18 @@ include '../templates/sidebar.php';
     
     .empty-state p {
         color: #6B7280;
+    }
+    
+    /* Toast Animation */
+    @keyframes toastSlideIn {
+        from {
+            opacity: 0;
+            transform: translateX(100%);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
     }
     
     /* Responsive */
@@ -816,11 +1071,76 @@ include '../templates/sidebar.php';
             width: 95%;
             margin: 20px;
         }
+        
+        .stats-summary {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
 
 <script>
-    // Open Add Modal
+    // ============================================
+    // TOAST NOTIFICATION SYSTEM
+    // ============================================
+    function showToast(message, type = 'success') {
+        // Create toast container if not exists
+        let container = document.getElementById('toastContainer');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toastContainer';
+            container.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 10000;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            `;
+            document.body.appendChild(container);
+        }
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.style.cssText = `
+            background: white;
+            border-radius: 12px;
+            padding: 14px 20px;
+            min-width: 280px;
+            max-width: 400px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: toastSlideIn 0.3s ease;
+            border-left: 4px solid ${type === 'success' ? '#10B981' : '#EF4444'};
+        `;
+        
+        const icon = type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle';
+        const iconColor = type === 'success' ? '#10B981' : '#EF4444';
+        
+        toast.innerHTML = `
+            <i class="fas ${icon}" style="color: ${iconColor}; font-size: 20px;"></i>
+            <span style="flex: 1; font-size: 14px; color: #374151;">${message}</span>
+            <i class="fas fa-times" style="cursor: pointer; color: #9CA3AF;" onclick="this.parentElement.remove()"></i>
+        `;
+        
+        container.appendChild(toast);
+        
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            if (toast.parentElement) {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                toast.style.transition = 'all 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }
+        }, 5000);
+    }
+    
+    // ============================================
+    // MODAL FUNCTIONS
+    // ============================================
     function openAddModal() {
         document.getElementById('modalTitle').innerHTML = '<i class="fas fa-plus-circle"></i> Add New Supplier';
         document.getElementById('supplier_id').value = '';
@@ -829,13 +1149,29 @@ include '../templates/sidebar.php';
         document.getElementById('email').value = '';
         document.getElementById('phone').value = '';
         document.getElementById('address').value = '';
+        document.getElementById('password').value = '';
+        document.getElementById('confirm_password').value = '';
+        document.getElementById('status').value = 'active';
         document.getElementById('add_supplier').value = '1';
         document.getElementById('edit_supplier').value = '';
+        
+        // Show password fields, hide status section
+        document.getElementById('passwordSection').style.display = 'block';
+        document.getElementById('statusSection').style.display = 'none';
+        document.getElementById('passwordRequired').style.display = 'inline';
+        document.getElementById('confirmRequired').style.display = 'inline';
+        document.getElementById('password').required = true;
+        document.getElementById('confirm_password').required = true;
+        
         document.getElementById('supplierModal').style.display = 'flex';
-        document.getElementById('company_name').focus();
+        setTimeout(() => document.getElementById('company_name').focus(), 100);
     }
     
-    // Edit Supplier Function
+    function closeModal() {
+        document.getElementById('supplierModal').style.display = 'none';
+    }
+    
+    // Edit Supplier
     function editSupplier(id) {
         fetch(`?get_supplier=${id}`)
             .then(response => response.json())
@@ -847,19 +1183,102 @@ include '../templates/sidebar.php';
                 document.getElementById('email').value = data.email || '';
                 document.getElementById('phone').value = data.phone || '';
                 document.getElementById('address').value = data.address || '';
+                document.getElementById('status').value = data.status;
                 document.getElementById('add_supplier').value = '';
                 document.getElementById('edit_supplier').value = '1';
+                
+                // Hide password fields for edit, show status section
+                document.getElementById('passwordSection').style.display = 'none';
+                document.getElementById('statusSection').style.display = 'block';
+                document.getElementById('password').required = false;
+                document.getElementById('confirm_password').required = false;
+                
                 document.getElementById('supplierModal').style.display = 'flex';
-                document.getElementById('company_name').focus();
+                setTimeout(() => document.getElementById('company_name').focus(), 100);
+            })
+            .catch(error => {
+                showToast('Error loading supplier data!', 'error');
             });
     }
     
-    // Close Modal
-    function closeModal() {
-        document.getElementById('supplierModal').style.display = 'none';
+    // Reset Supplier Password
+    function resetSupplierPassword(id) {
+        if (confirm('Are you sure you want to reset the password for this supplier?\n\nNew password will be: 123456')) {
+            window.location.href = `?reset_password=${id}`;
+        }
     }
     
-    // Close modal on outside click
+    // Toggle Supplier Status
+    function toggleSupplierStatus(id) {
+        if (confirm('Are you sure you want to change the status of this supplier?')) {
+            window.location.href = `?toggle=${id}`;
+        }
+    }
+    
+    // Delete Supplier with Animation
+    function deleteSupplier(id) {
+        if (confirm('Are you sure you want to DELETE this supplier?\n\nThis action cannot be undone!')) {
+            const card = document.querySelector(`.supplier-card[data-id="${id}"]`);
+            if (card) {
+                card.classList.add('deleting');
+                setTimeout(() => {
+                    window.location.href = `?delete=${id}`;
+                }, 300);
+            } else {
+                window.location.href = `?delete=${id}`;
+            }
+        }
+    }
+    
+    // ============================================
+    // PASSWORD TOGGLE
+    // ============================================
+    document.querySelectorAll('.toggle-password').forEach(icon => {
+        icon.addEventListener('click', function() {
+            const targetId = this.getAttribute('data-target');
+            const input = document.getElementById(targetId);
+            if (input) {
+                const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
+                input.setAttribute('type', type);
+                this.classList.toggle('fa-eye');
+                this.classList.toggle('fa-eye-slash');
+            }
+        });
+    });
+    
+    // ============================================
+    // FORM SUBMIT LOADING STATE
+    // ============================================
+    const form = document.getElementById('supplierForm');
+    const submitBtn = document.getElementById('submitBtn');
+    
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            const password = document.getElementById('password');
+            const confirmPassword = document.getElementById('confirm_password');
+            
+            // For add mode, validate password
+            if (document.getElementById('add_supplier').value === '1') {
+                if (password.value !== confirmPassword.value) {
+                    e.preventDefault();
+                    showToast('Passwords do not match!', 'error');
+                    return;
+                }
+                if (password.value.length < 6) {
+                    e.preventDefault();
+                    showToast('Password must be at least 6 characters!', 'error');
+                    return;
+                }
+            }
+            
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+            submitBtn.disabled = true;
+        });
+    }
+    
+    // ============================================
+    // CLOSE MODAL ON OUTSIDE CLICK
+    // ============================================
     window.onclick = function(event) {
         const modal = document.getElementById('supplierModal');
         if (event.target === modal) {
@@ -867,16 +1286,18 @@ include '../templates/sidebar.php';
         }
     }
     
-    // Form submit loading state
-    const form = document.getElementById('supplierForm');
-    const submitBtn = document.getElementById('submitBtn');
-    
-    form.addEventListener('submit', function(e) {
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-        submitBtn.disabled = true;
+    // ============================================
+    // KEYBOARD SHORTCUT: ESC TO CLOSE MODAL
+    // ============================================
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeModal();
+        }
     });
     
-    // Animate cards on scroll
+    // ============================================
+    // ANIMATE CARDS ON SCROLL
+    // ============================================
     const observerOptions = {
         threshold: 0.1,
         rootMargin: '0px 0px -50px 0px'
@@ -896,12 +1317,38 @@ include '../templates/sidebar.php';
         observer.observe(card);
     });
     
-    // Keyboard shortcut: ESC to close modal
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            closeModal();
-        }
-    });
+    // ============================================
+    // AUTO-SEARCH ON INPUT (DEBOUNCED)
+    // ============================================
+    let searchTimeout;
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                document.getElementById('filterForm').submit();
+            }, 500);
+        });
+    }
+    
+    // ============================================
+    // CLEAR FILTERS BUTTON
+    // ============================================
+    const clearFilters = document.getElementById('clearFilters');
+    if (clearFilters) {
+        clearFilters.addEventListener('click', function(e) {
+            e.preventDefault();
+            window.location.href = 'suppliers.php';
+        });
+    }
+    
+    // ============================================
+    // PHP SESSION TOAST MESSAGES
+    // ============================================
+    <?php if(isset($_SESSION['toast_message'])): ?>
+        showToast('<?php echo addslashes($_SESSION['toast_message']); ?>', '<?php echo $_SESSION['toast_type'] ?? 'success'; ?>');
+        <?php unset($_SESSION['toast_message']); unset($_SESSION['toast_type']); ?>
+    <?php endif; ?>
 </script>
 
 <?php include '../templates/footer.php'; ?>

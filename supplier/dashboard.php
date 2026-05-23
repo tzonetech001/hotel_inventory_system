@@ -4,48 +4,23 @@ require_once '../includes/db_connection.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth_check.php';
 
+// Check if user is logged in and is a supplier
 checkAuth(['Supplier']);
 
-$user_id = $_SESSION['user_id'];
+$supplier_id = $_SESSION['supplier_id'] ?? $_SESSION['user_id'];
+$supplier_name = $_SESSION['fullname'] ?? '';
 
-// Get supplier information based on logged in user
-// Assuming supplier users have matching email or we link them
-$sql = "SELECT * FROM suppliers WHERE email = ? OR contact_person LIKE CONCAT('%', ?, '%')";
+// Get supplier orders
+$sql = "SELECT po.*, u.fullname as created_by_name
+        FROM purchase_orders po
+        JOIN users u ON po.created_by = u.id
+        WHERE po.supplier_id = ?
+        ORDER BY po.created_at DESC";
+
 $stmt = $db->prepare($sql);
-$stmt->bind_param("ss", $_SESSION['email'], $_SESSION['fullname']);
+$stmt->bind_param("i", $supplier_id);
 $stmt->execute();
-$supplier_result = $stmt->get_result();
-$supplier = $supplier_result->fetch_assoc();
-
-if (!$supplier) {
-    // If no supplier found, show all orders for demo
-    $supplier_id = 0;
-} else {
-    $supplier_id = $supplier['id'];
-}
-
-// Get orders for this supplier
-if ($supplier_id > 0) {
-    $sql = "SELECT po.*, u.fullname as created_by_name
-            FROM purchase_orders po
-            JOIN users u ON po.created_by = u.id
-            WHERE po.supplier_id = ?
-            ORDER BY po.created_at DESC";
-    $stmt = $db->prepare($sql);
-    $stmt->bind_param("i", $supplier_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-} else {
-    // For demo, show all pending orders
-    $sql = "SELECT po.*, s.company_name as supplier_name, u.fullname as created_by_name
-            FROM purchase_orders po
-            JOIN suppliers s ON po.supplier_id = s.id
-            JOIN users u ON po.created_by = u.id
-            WHERE po.status IN ('approved', 'pending')
-            ORDER BY po.created_at DESC";
-    $result = $db->query($sql);
-}
-
+$result = $stmt->get_result();
 $orders = $result->fetch_all(MYSQLI_ASSOC);
 
 // Count orders by status
@@ -66,7 +41,7 @@ include '../templates/sidebar.php';
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-store"></i> Supplier Dashboard</h1>
-        <p>Welcome, <?php echo htmlspecialchars($_SESSION['fullname']); ?>!</p>
+        <p>Welcome, <?php echo htmlspecialchars($supplier_name); ?>!</p>
     </div>
     
     <!-- Statistics -->
@@ -155,12 +130,12 @@ include '../templates/sidebar.php';
                                                 <i class="fas fa-check"></i> Mark Delivered
                                             </button>
                                         <?php endif; ?>
-                                    </td>
+                                     </td
                                 </tr>
                             <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
-                                <td colspan="7" class="text-center">No orders found</td>
+                                <td colspan="7" class="text-center">No orders found</td
                             </tr>
                         <?php endif; ?>
                     </tbody>
@@ -234,6 +209,104 @@ include '../templates/sidebar.php';
     .btn-link:hover {
         color: #FF6B6B;
     }
+    
+    .status-pending {
+        background: #FEF3C7;
+        color: #92400E;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    
+    .status-approved {
+        background: #D1FAE5;
+        color: #065F46;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    
+    .status-delivered {
+        background: #DBEAFE;
+        color: #1E40AF;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.5);
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .modal-content {
+        background: white;
+        border-radius: 16px;
+        width: 90%;
+        max-width: 700px;
+        max-height: 80vh;
+        overflow-y: auto;
+        animation: modalSlideIn 0.3s ease;
+    }
+    
+    @keyframes modalSlideIn {
+        from {
+            opacity: 0;
+            transform: translateY(-50px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    .modal-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid #E5E7EB;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #F9FAFB;
+    }
+    
+    .modal-header .close {
+        font-size: 28px;
+        cursor: pointer;
+        color: #9CA3AF;
+    }
+    
+    .modal-header .close:hover {
+        color: #EF4444;
+    }
+    
+    .modal-body {
+        padding: 24px;
+    }
+    
+    .item-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 12px;
+        border-bottom: 1px solid #E5E7EB;
+    }
+    
+    .total-row {
+        background: #F3F4F6;
+        font-weight: bold;
+        border-radius: 8px;
+        margin-top: 10px;
+    }
 </style>
 
 <script>
@@ -259,7 +332,7 @@ function viewItems(poId) {
                 `;
             });
             
-            itemsHtml += `<div class="item-row" style="background: #F3F4F6; font-weight: bold; margin-top: 10px;">
+            itemsHtml += `<div class="item-row total-row">
                             <div>Total</div>
                             <div></div>
                             <div></div>
@@ -268,13 +341,12 @@ function viewItems(poId) {
             itemsHtml += '</div>';
             
             document.getElementById('itemsModalBody').innerHTML = itemsHtml;
-            document.getElementById('itemsModal').style.display = 'block';
+            document.getElementById('itemsModal').style.display = 'flex';
         });
 }
 
 function markAsDelivered(poId) {
     if (confirm('Have you delivered all items for this order? The hotel storekeeper will confirm receipt.')) {
-        // Here you would update the status to 'delivered' or send notification
         alert('Thank you! Please wait for storekeeper confirmation.');
     }
 }

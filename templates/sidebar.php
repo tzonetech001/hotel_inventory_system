@@ -83,7 +83,13 @@
         <a href="<?php echo APP_URL; ?>/storekeeper/stock_out.php"><i class="fas fa-arrow-up"></i> <span>Stock Out</span></a>
     </li>
     <li class="menu-divider"></li>
-    <li class="menu-header">Reports</li>
+    <li class="<?php echo ($current_page == 'confirm_delivery.php') ? 'active' : ''; ?>">
+    <a href="<?php echo APP_URL; ?>/storekeeper/confirm_delivery.php">
+        <i class="fas fa-check-double"></i>
+        <span>Confirm Deliveries</span>
+    </a>
+</li>
+    
     <li class="<?php echo ($current_page == 'stock_history.php') ? 'active' : ''; ?>">
         <a href="<?php echo APP_URL; ?>/storekeeper/stock_history.php"><i class="fas fa-history"></i> <span>Stock History</span></a>
     </li>
@@ -125,7 +131,7 @@
 <li class="menu-divider"></li>
 <li class="menu-header">Account</li>
 <li>
-    <a href="<?php echo APP_URL; ?>/templates/profile.php">
+    <a href="<?php echo APP_URL; ?>/supplier/profile.php">
         <i class="fas fa-user-circle"></i> <span>My Profile</span>
     </a>
 </li>

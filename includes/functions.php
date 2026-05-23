@@ -2,18 +2,53 @@
 require_once 'db_connection.php';
 
 // ============================================
-// LOGGING FUNCTIONS
+// LOGGING FUNCTIONS (UPDATED - Handles both users and suppliers)
 // ============================================
 
-// Log system activity
-function logActivity($user_id, $action, $details = null) {
+/**
+ * Log system activity
+ * 
+ * @param int $user_id User ID (can be 0 for suppliers or system actions)
+ * @param string $action Action performed
+ * @param string|null $details Additional details
+ * @param string $user_type Type of user ('staff' or 'supplier')
+ * @return bool Success status
+ */
+function logActivity($user_id, $action, $details = null, $user_type = 'staff') {
     global $db;
+    
     $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    
+    // If user_id is 0 or we're logging for supplier, use a special handling
+    if ($user_id == 0 || $user_type == 'supplier') {
+        // For suppliers or system actions, we can either:
+        // Option 1: Insert with user_id = NULL (requires altering table)
+        // Option 2: Skip logging for suppliers
+        // Option 3: Create a separate log table for suppliers
+        
+        // For now, we'll skip logging for suppliers to avoid foreign key errors
+        // But we can still log to a file or create a separate table
+        $log_file = dirname(__DIR__) . '/logs/activity.log';
+        $log_entry = date('Y-m-d H:i:s') . " - [$action] " . ($details ?? '') . " - IP: $ip\n";
+        error_log($log_entry, 3, $log_file);
+        return true;
+    }
+    
+    // For staff users, insert into system_logs table
     $sql = "INSERT INTO system_logs (user_id, action, details, ip_address) VALUES (?, ?, ?, ?)";
     $stmt = $db->prepare($sql);
     $stmt->bind_param("isss", $user_id, $action, $details, $ip);
     return $stmt->execute();
 }
+
+// Alternative: If you want to allow NULL user_id in system_logs, run this SQL:
+// ALTER TABLE system_logs MODIFY COLUMN user_id INT NULL;
+// ALTER TABLE system_logs DROP FOREIGN KEY system_logs_ibfk_1;
+// ALTER TABLE system_logs ADD CONSTRAINT system_logs_ibfk_1 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+
+// ============================================
+// REST OF YOUR FUNCTIONS...
+// ============================================
 
 // Get user role name
 function getUserRole($user_id) {
@@ -30,10 +65,6 @@ function getUserRole($user_id) {
     }
     return null;
 }
-
-// ============================================
-// STOCK MANAGEMENT FUNCTIONS
-// ============================================
 
 // Get current stock of an item
 function getCurrentStock($item_id) {
@@ -135,10 +166,6 @@ function getLowStockItems() {
     return $result->fetch_all(MYSQLI_ASSOC);
 }
 
-// ============================================
-// DASHBOARD STATS FUNCTIONS
-// ============================================
-
 // Get dashboard stats based on role
 function getDashboardStats($role, $user_id = null) {
     global $db;
@@ -165,17 +192,18 @@ function getDashboardStats($role, $user_id = null) {
     return $stats;
 }
 
-// ============================================
-// PASSWORD RESET FUNCTIONS
-// ============================================
-
 // Generate password reset token
-function generateResetToken($user_id) {
+function generateResetToken($user_id, $user_type = 'staff') {
     global $db;
     $token = bin2hex(random_bytes(32));
     $expires = date('Y-m-d H:i:s', strtotime('+1 hour'));
     
-    $sql = "UPDATE users SET reset_token = ?, reset_expires = ? WHERE id = ?";
+    if ($user_type == 'staff') {
+        $sql = "UPDATE users SET reset_token = ?, reset_expires = ? WHERE id = ?";
+    } else {
+        $sql = "UPDATE suppliers SET reset_token = ?, reset_expires = ? WHERE id = ?";
+    }
+    
     $stmt = $db->prepare($sql);
     $stmt->bind_param("ssi", $token, $expires, $user_id);
     $stmt->execute();
@@ -184,9 +212,15 @@ function generateResetToken($user_id) {
 }
 
 // Verify reset token
-function verifyResetToken($token) {
+function verifyResetToken($token, $user_type = 'staff') {
     global $db;
-    $sql = "SELECT id FROM users WHERE reset_token = ? AND reset_expires > NOW() AND status = 'active'";
+    
+    if ($user_type == 'staff') {
+        $sql = "SELECT id FROM users WHERE reset_token = ? AND reset_expires > NOW() AND status = 'active'";
+    } else {
+        $sql = "SELECT id FROM suppliers WHERE reset_token = ? AND reset_expires > NOW() AND status = 'active'";
+    }
+    
     $stmt = $db->prepare($sql);
     $stmt->bind_param("s", $token);
     $stmt->execute();
@@ -199,9 +233,15 @@ function verifyResetToken($token) {
 }
 
 // Clear reset token after password change
-function clearResetToken($user_id) {
+function clearResetToken($user_id, $user_type = 'staff') {
     global $db;
-    $sql = "UPDATE users SET reset_token = NULL, reset_expires = NULL WHERE id = ?";
+    
+    if ($user_type == 'staff') {
+        $sql = "UPDATE users SET reset_token = NULL, reset_expires = NULL WHERE id = ?";
+    } else {
+        $sql = "UPDATE suppliers SET reset_token = NULL, reset_expires = NULL WHERE id = ?";
+    }
+    
     $stmt = $db->prepare($sql);
     $stmt->bind_param("i", $user_id);
     return $stmt->execute();

@@ -216,16 +216,7 @@ include '../templates/sidebar.php';
                             </div>
                         </div>
                         
-                        <div class="role-item">
-                            <div class="role-icon supplier">
-                                <i class="fas fa-truck"></i>
-                            </div>
-                            <div class="role-info">
-                                <h4>Supplier</h4>
-                                <p>Views orders and updates delivery status.</p>
-                            </div>
-                        </div>
-                    </div>
+                       
                 </div>
             </div>
            

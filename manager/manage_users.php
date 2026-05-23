@@ -8,16 +8,14 @@ require_once '../includes/auth_check.php';
 checkAuth(['Hotel Manager']);
 
 $user_id = $_SESSION['user_id'];
-$success = '';
 $error = '';
 $active_tab = $_GET['tab'] ?? 'storekeepers';
+$search = $_GET['search'] ?? '';
 
 // Define allowed roles for manager to manage
-$allowed_roles = ['Storekeeper', 'Procurement Officer', 'Supplier'];
 $role_ids = [
     'Storekeeper' => 3,
     'Procurement Officer' => 4,
-    'Supplier' => 5
 ];
 
 // ============================================
@@ -35,11 +33,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_user'])) {
     $role_id = $role_ids[$role_name] ?? 0;
     
     if (empty($fullname) || empty($username) || empty($email) || $role_id == 0) {
-        $error = "Please fill all required fields!";
+        $_SESSION['toast_message'] = "Please fill all required fields!";
+        $_SESSION['toast_type'] = "error";
     } elseif ($password != $confirm_password) {
-        $error = "Passwords do not match!";
+        $_SESSION['toast_message'] = "Passwords do not match!";
+        $_SESSION['toast_type'] = "error";
     } elseif (strlen($password) < 6) {
-        $error = "Password must be at least 6 characters!";
+        $_SESSION['toast_message'] = "Password must be at least 6 characters!";
+        $_SESSION['toast_type'] = "error";
     } else {
         // Check if username exists
         $check_sql = "SELECT id FROM users WHERE username = ? OR email = ?";
@@ -49,7 +50,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_user'])) {
         $check_result = $check_stmt->get_result();
         
         if ($check_result->num_rows > 0) {
-            $error = "Username or email already exists!";
+            $_SESSION['toast_message'] = "Username or email already exists!";
+            $_SESSION['toast_type'] = "error";
         } else {
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
             
@@ -65,10 +67,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_user'])) {
                 header("Location: manage_users.php?tab=" . strtolower(str_replace(' ', '_', $role_name)) . "s");
                 exit();
             } else {
-                $error = "Error adding user: " . $db->error;
+                $_SESSION['toast_message'] = "Error adding user: " . $db->error;
+                $_SESSION['toast_type'] = "error";
             }
         }
     }
+    header("Location: manage_users.php?tab=$active_tab");
+    exit();
 }
 
 // ============================================
@@ -87,11 +92,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_user'])) {
     $role_id = $role_ids[$role_name] ?? 0;
     
     if (empty($fullname) || empty($email) || $role_id == 0) {
-        $error = "Please fill all required fields!";
+        $_SESSION['toast_message'] = "Please fill all required fields!";
+        $_SESSION['toast_type'] = "error";
     } elseif (!empty($password) && $password != $confirm_password) {
-        $error = "Passwords do not match!";
+        $_SESSION['toast_message'] = "Passwords do not match!";
+        $_SESSION['toast_type'] = "error";
     } elseif (!empty($password) && strlen($password) < 6) {
-        $error = "Password must be at least 6 characters!";
+        $_SESSION['toast_message'] = "Password must be at least 6 characters!";
+        $_SESSION['toast_type'] = "error";
     } else {
         if (!empty($password)) {
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
@@ -111,9 +119,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_user'])) {
             header("Location: manage_users.php?tab=" . strtolower(str_replace(' ', '_', $role_name)) . "s");
             exit();
         } else {
-            $error = "Error updating user!";
+            $_SESSION['toast_message'] = "Error updating user!";
+            $_SESSION['toast_type'] = "error";
         }
     }
+    header("Location: manage_users.php?tab=$active_tab");
+    exit();
 }
 
 // ============================================
@@ -172,6 +183,9 @@ if (isset($_GET['toggle'])) {
         if ($stmt->execute()) {
             $_SESSION['toast_message'] = "User status updated!";
             $_SESSION['toast_type'] = "success";
+        } else {
+            $_SESSION['toast_message'] = "Error updating status!";
+            $_SESSION['toast_type'] = "error";
         }
     }
     header("Location: manage_users.php?tab=$tab");
@@ -195,7 +209,7 @@ if (isset($_GET['reset_password'])) {
     
     if ($stmt->execute()) {
         // Get user details
-        $user_sql = "SELECT username, email FROM users WHERE id = ?";
+        $user_sql = "SELECT username, fullname FROM users WHERE id = ?";
         $user_stmt = $db->prepare($user_sql);
         $user_stmt->bind_param("i", $reset_id);
         $user_stmt->execute();
@@ -203,7 +217,7 @@ if (isset($_GET['reset_password'])) {
         $user_data = $user_result->fetch_assoc();
         
         logActivity($user_id, 'Reset Password', "Reset password for user: {$user_data['username']}");
-        $_SESSION['toast_message'] = "Password reset successfully! New password: <strong>$new_password</strong>";
+        $_SESSION['toast_message'] = "Password reset for <strong>" . htmlspecialchars($user_data['fullname']) . "</strong>! New password: <code>$new_password</code>";
         $_SESSION['toast_type'] = "success";
     } else {
         $_SESSION['toast_message'] = "Error resetting password!";
@@ -214,14 +228,21 @@ if (isset($_GET['reset_password'])) {
 }
 
 // ============================================
-// GET USERS BY ROLE
+// GET USERS BY ROLE WITH SEARCH
 // ============================================
-function getUsersByRole($db, $role_id) {
+function getUsersByRole($db, $role_id, $search = '') {
     $sql = "SELECT u.*, r.role_name 
             FROM users u 
             JOIN roles r ON u.role_id = r.id 
-            WHERE u.role_id = ? 
-            ORDER BY u.created_at DESC";
+            WHERE u.role_id = ?";
+    
+    if (!empty($search)) {
+        $search = $db->real_escape_string($search);
+        $sql .= " AND (u.fullname LIKE '%$search%' OR u.username LIKE '%$search%' OR u.email LIKE '%$search%')";
+    }
+    
+    $sql .= " ORDER BY u.created_at DESC";
+    
     $stmt = $db->prepare($sql);
     $stmt->bind_param("i", $role_id);
     $stmt->execute();
@@ -229,9 +250,8 @@ function getUsersByRole($db, $role_id) {
     return $result->fetch_all(MYSQLI_ASSOC);
 }
 
-$storekeepers = getUsersByRole($db, 3);
-$procurement_officers = getUsersByRole($db, 4);
-$suppliers_list = getUsersByRole($db, 5);
+$storekeepers = getUsersByRole($db, 3, $search);
+$procurement_officers = getUsersByRole($db, 4, $search);
 
 // Get user for editing
 $edit_user = null;
@@ -252,27 +272,38 @@ include '../templates/sidebar.php';
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-users-gear"></i> User Management</h1>
-        <p>Manage storekeepers, procurement officers, and suppliers</p>
+        <p>Manage storekeepers and procurement officers</p>
     </div>
-    
-    <?php if($error): ?>
-        <script>showToast('<?php echo addslashes($error); ?>', 'error');</script>
-    <?php endif; ?>
     
     <!-- User Management Tabs -->
     <div class="user-tabs">
-        <a href="?tab=storekeepers" class="user-tab <?php echo $active_tab == 'storekeepers' ? 'active' : ''; ?>">
+        <a href="?tab=storekeepers&search=<?php echo urlencode($search); ?>" class="user-tab <?php echo $active_tab == 'storekeepers' ? 'active' : ''; ?>">
             <i class="fas fa-boxes"></i> Storekeepers
             <span class="badge"><?php echo count($storekeepers); ?></span>
         </a>
-        <a href="?tab=procurement_officers" class="user-tab <?php echo $active_tab == 'procurement_officers' ? 'active' : ''; ?>">
+        <a href="?tab=procurement_officers&search=<?php echo urlencode($search); ?>" class="user-tab <?php echo $active_tab == 'procurement_officers' ? 'active' : ''; ?>">
             <i class="fas fa-shopping-cart"></i> Procurement Officers
             <span class="badge"><?php echo count($procurement_officers); ?></span>
         </a>
-        <a href="?tab=suppliers" class="user-tab <?php echo $active_tab == 'suppliers' ? 'active' : ''; ?>">
-            <i class="fas fa-truck"></i> Suppliers
-            <span class="badge"><?php echo count($suppliers_list); ?></span>
-        </a>
+    </div>
+    
+    <!-- Search Bar -->
+    <div class="search-bar">
+        <form method="GET" action="" class="search-form">
+            <input type="hidden" name="tab" value="<?php echo $active_tab; ?>">
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" name="search" placeholder="Search by name, username or email..." value="<?php echo htmlspecialchars($search); ?>">
+            </div>
+            <?php if(!empty($search)): ?>
+                <a href="?tab=<?php echo $active_tab; ?>" class="btn-clear">
+                    <i class="fas fa-times"></i> Clear
+                </a>
+            <?php endif; ?>
+            <button type="submit" class="btn-search">
+                <i class="fas fa-filter"></i> Search
+            </button>
+        </form>
     </div>
     
     <!-- Add User Card -->
@@ -281,8 +312,7 @@ include '../templates/sidebar.php';
             <h3><i class="fas fa-plus-circle"></i> 
                 <?php 
                     if ($active_tab == 'storekeepers') echo 'Add New Storekeeper';
-                    elseif ($active_tab == 'procurement_officers') echo 'Add New Procurement Officer';
-                    else echo 'Add New Supplier';
+                    else echo 'Add New Procurement Officer';
                 ?>
             </h3>
         </div>
@@ -291,42 +321,42 @@ include '../templates/sidebar.php';
                 <input type="hidden" name="add_user" value="1">
                 <input type="hidden" name="role_name" value="<?php 
                     if ($active_tab == 'storekeepers') echo 'Storekeeper';
-                    elseif ($active_tab == 'procurement_officers') echo 'Procurement Officer';
-                    else echo 'Supplier';
+                    else echo 'Procurement Officer';
                 ?>">
                 
                 <div class="form-row">
                     <div class="form-group">
-                        <label><i class="fas fa-user"></i> Full Name *</label>
-                        <input type="text" name="fullname" required>
+                        <label><i class="fas fa-user"></i> Full Name <span class="required">*</span></label>
+                        <input type="text" name="fullname" placeholder="Enter full name" required>
                     </div>
                     <div class="form-group">
-                        <label><i class="fas fa-user-tag"></i> Username *</label>
-                        <input type="text" name="username" required>
+                        <label><i class="fas fa-user-tag"></i> Username <span class="required">*</span></label>
+                        <input type="text" name="username" placeholder="Enter username" required>
                     </div>
                 </div>
                 
                 <div class="form-row">
                     <div class="form-group">
-                        <label><i class="fas fa-envelope"></i> Email *</label>
-                        <input type="email" name="email" required>
+                        <label><i class="fas fa-envelope"></i> Email <span class="required">*</span></label>
+                        <input type="email" name="email" placeholder="user@example.com" required>
                     </div>
                     <div class="form-group">
                         <label><i class="fas fa-phone"></i> Phone</label>
-                        <input type="tel" name="phone">
+                        <input type="tel" name="phone" placeholder="Enter phone number">
                     </div>
                 </div>
                 
                 <div class="form-row">
                     <div class="form-group">
-                        <label><i class="fas fa-lock"></i> Password *</label>
+                        <label><i class="fas fa-lock"></i> Password <span class="required">*</span></label>
                         <div class="password-wrapper">
                             <input type="password" name="password" id="add_password" required>
                             <i class="fas fa-eye toggle-password" data-target="add_password"></i>
                         </div>
+                        <small>Minimum 6 characters</small>
                     </div>
                     <div class="form-group">
-                        <label><i class="fas fa-lock"></i> Confirm Password *</label>
+                        <label><i class="fas fa-lock"></i> Confirm Password <span class="required">*</span></label>
                         <div class="password-wrapper">
                             <input type="password" name="confirm_password" id="add_confirm_password" required>
                             <i class="fas fa-eye toggle-password" data-target="add_confirm_password"></i>
@@ -335,7 +365,7 @@ include '../templates/sidebar.php';
                 </div>
                 
                 <div class="form-actions">
-                    <button type="submit" class="btn-primary">
+                    <button type="submit" class="btn-primary" id="addSubmitBtn">
                         <i class="fas fa-save"></i> Add User
                     </button>
                 </div>
@@ -349,10 +379,15 @@ include '../templates/sidebar.php';
             <h3><i class="fas fa-list"></i> 
                 <?php 
                     if ($active_tab == 'storekeepers') echo 'Storekeepers List';
-                    elseif ($active_tab == 'procurement_officers') echo 'Procurement Officers List';
-                    else echo 'Suppliers List';
+                    else echo 'Procurement Officers List';
                 ?>
             </h3>
+            <div class="card-header-info">
+                Showing <?php 
+                    if ($active_tab == 'storekeepers') echo count($storekeepers);
+                    else echo count($procurement_officers);
+                ?> user(s)
+            </div>
         </div>
         <div class="card-body">
             <div class="table-responsive">
@@ -373,13 +408,12 @@ include '../templates/sidebar.php';
                         <?php 
                             $users_list = [];
                             if ($active_tab == 'storekeepers') $users_list = $storekeepers;
-                            elseif ($active_tab == 'procurement_officers') $users_list = $procurement_officers;
-                            else $users_list = $suppliers_list;
+                            else $users_list = $procurement_officers;
                         ?>
                         
                         <?php if(count($users_list) > 0): ?>
-                            <?php foreach($users_list as $user): ?>
-                                <tr class="user-row">
+                            <?php foreach($users_list as $index => $user): ?>
+                                <tr class="user-row" style="animation-delay: <?php echo $index * 0.03; ?>s">
                                     <td>#<?php echo $user['id']; ?></td>
                                     <td>
                                         <div class="user-name-cell">
@@ -390,7 +424,7 @@ include '../templates/sidebar.php';
                                                 <strong><?php echo htmlspecialchars($user['fullname']); ?></strong>
                                             </div>
                                         </div>
-                                    </td>
+                            </td>
                                     <td><?php echo htmlspecialchars($user['username']); ?></td>
                                     <td><?php echo htmlspecialchars($user['email']); ?></td>
                                     <td><?php echo htmlspecialchars($user['phone'] ?? '-'); ?></td>
@@ -399,20 +433,20 @@ include '../templates/sidebar.php';
                                             <i class="fas <?php echo $user['status'] == 'active' ? 'fa-circle' : 'fa-circle'; ?>"></i>
                                             <?php echo ucfirst($user['status']); ?>
                                         </span>
-                                    </td>
+                                     </td>
                                     <td><?php echo date('d/m/Y', strtotime($user['created_at'])); ?></td>
                                     <td>
                                         <div class="action-buttons">
-                                            <button onclick="editUser(<?php echo htmlspecialchars(json_encode($user)); ?>)" class="btn-icon edit" title="Edit">
+                                            <button onclick="editUser(<?php echo htmlspecialchars(json_encode($user)); ?>)" class="btn-icon edit" title="Edit User">
                                                 <i class="fas fa-edit"></i>
                                             </button>
-                                            <a href="?reset_password=<?php echo $user['id']; ?>&tab=<?php echo $active_tab; ?>" class="btn-icon key" title="Reset Password" onclick="return confirm('Reset password for <?php echo addslashes($user['fullname']); ?>? New password will be shown.')">
+                                            <a href="?reset_password=<?php echo $user['id']; ?>&tab=<?php echo $active_tab; ?>" class="btn-icon key" title="Reset Password" onclick="return confirm('Reset password for <?php echo addslashes($user['fullname']); ?>?')">
                                                 <i class="fas fa-key"></i>
                                             </a>
-                                            <a href="?toggle=<?php echo $user['id']; ?>&tab=<?php echo $active_tab; ?>" class="btn-icon toggle" title="Toggle Status">
+                                            <a href="?toggle=<?php echo $user['id']; ?>&tab=<?php echo $active_tab; ?>" class="btn-icon toggle" title="Toggle Status" onclick="return confirm('Change status for <?php echo addslashes($user['fullname']); ?>?')">
                                                 <i class="fas fa-power-off"></i>
                                             </a>
-                                            <a href="?delete=<?php echo $user['id']; ?>&tab=<?php echo $active_tab; ?>" class="btn-icon delete" title="Delete" onclick="return confirm('Delete <?php echo addslashes($user['fullname']); ?>? This cannot be undone!')">
+                                            <a href="?delete=<?php echo $user['id']; ?>&tab=<?php echo $active_tab; ?>" class="btn-icon delete" title="Delete User" onclick="return confirm('Delete <?php echo addslashes($user['fullname']); ?>? This cannot be undone!')">
                                                 <i class="fas fa-trash"></i>
                                             </a>
                                         </div>
@@ -424,7 +458,10 @@ include '../templates/sidebar.php';
                                 <td colspan="8" class="text-center">
                                     <div class="empty-state">
                                         <i class="fas fa-users-slash"></i>
-                                        <p>No users found in this category</p>
+                                        <p>No users found<?php echo !empty($search) ? ' matching "' . htmlspecialchars($search) . '"' : ' in this category'; ?></p>
+                                        <?php if(!empty($search)): ?>
+                                            <a href="?tab=<?php echo $active_tab; ?>" class="btn-secondary" style="margin-top: 10px;">Clear Search</a>
+                                        <?php endif; ?>
                                     </div>
                                 </td>
                             </tr>
@@ -432,6 +469,15 @@ include '../templates/sidebar.php';
                     </tbody>
                 </table>
             </div>
+        </div>
+    </div>
+    
+    <!-- Note about Suppliers -->
+    <div class="info-note">
+        <i class="fas fa-info-circle"></i>
+        <div>
+            <strong>Note:</strong> Suppliers are managed separately in the 
+            <a href="suppliers.php">Suppliers Management</a> page.
         </div>
     </div>
 </div>
@@ -450,7 +496,7 @@ include '../templates/sidebar.php';
                 <input type="hidden" name="role_name" id="edit_role_name">
                 
                 <div class="form-group">
-                    <label>Full Name *</label>
+                    <label>Full Name <span class="required">*</span></label>
                     <input type="text" name="fullname" id="edit_fullname" required>
                 </div>
                 
@@ -461,13 +507,13 @@ include '../templates/sidebar.php';
                 </div>
                 
                 <div class="form-group">
-                    <label>Email *</label>
+                    <label>Email <span class="required">*</span></label>
                     <input type="email" name="email" id="edit_email" required>
                 </div>
                 
                 <div class="form-group">
                     <label>Phone</label>
-                    <input type="tel" name="phone" id="edit_phone">
+                    <input type="tel" name="phone" id="edit_phone" placeholder="Enter phone number">
                 </div>
                 
                 <div class="form-group">
@@ -496,7 +542,7 @@ include '../templates/sidebar.php';
                 </div>
                 
                 <div class="form-actions">
-                    <button type="submit" class="btn-primary">
+                    <button type="submit" class="btn-primary" id="editSubmitBtn">
                         <i class="fas fa-save"></i> Update User
                     </button>
                     <button type="button" class="btn-secondary" onclick="closeEditModal()">
@@ -521,7 +567,7 @@ include '../templates/sidebar.php';
         display: flex;
         align-items: center;
         gap: 8px;
-        padding: 12px 24px;
+        padding: 12px 28px;
         background: white;
         border-radius: 12px;
         text-decoration: none;
@@ -554,16 +600,307 @@ include '../templates/sidebar.php';
         color: white;
     }
     
-    /* Add User Card */
-    .add-user-card {
+    /* Search Bar */
+    .search-bar {
+        background: white;
+        border-radius: 12px;
+        padding: 15px 20px;
+        margin-bottom: 25px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .search-form {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    
+    .search-box {
+        position: relative;
+        flex: 1;
+        min-width: 250px;
+    }
+    
+    .search-box i {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #9CA3AF;
+    }
+    
+    .search-box input {
+        width: 100%;
+        padding: 10px 12px 10px 38px;
+        border: 1px solid #E5E7EB;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: all 0.3s;
+    }
+    
+    .search-box input:focus {
+        outline: none;
+        border-color: #1E3A8A;
+        box-shadow: 0 0 0 3px rgba(30,58,138,0.1);
+    }
+    
+    .btn-search {
+        background: #1E3A8A;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s;
+        font-weight: 500;
+    }
+    
+    .btn-search:hover {
+        background: #2563EB;
+    }
+    
+    .btn-clear {
+        background: #F3F4F6;
+        color: #374151;
+        padding: 10px 16px;
+        border-radius: 8px;
+        text-decoration: none;
+        transition: all 0.3s;
+        font-weight: 500;
+    }
+    
+    .btn-clear:hover {
+        background: #E5E7EB;
+    }
+    
+    /* Card Styles */
+    .animate-card {
+        animation: fadeInUp 0.4s ease;
+    }
+    
+    .animate-card-delayed {
+        animation: fadeInUp 0.4s ease 0.1s both;
+    }
+    
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    .card {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        overflow: hidden;
         margin-bottom: 25px;
     }
     
+    .card-header {
+        padding: 18px 24px;
+        background: #F9FAFB;
+        border-bottom: 1px solid #E5E7EB;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    
+    .card-header h3 {
+        margin: 0;
+        font-size: 16px;
+        color: #1E3A8A;
+    }
+    
+    .card-header-info {
+        font-size: 13px;
+        color: #6B7280;
+    }
+    
+    .card-body {
+        padding: 24px;
+    }
+    
+    /* Add User Form */
     .add-user-form .form-row {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 20px;
         margin-bottom: 20px;
+    }
+    
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: #374151;
+        font-size: 14px;
+    }
+    
+    .required {
+        color: #EF4444;
+    }
+    
+    .optional {
+        font-weight: normal;
+        font-size: 11px;
+        color: #6B7280;
+    }
+    
+    .form-group input,
+    .form-group select {
+        width: 100%;
+        padding: 12px 15px;
+        border: 1px solid #E5E7EB;
+        border-radius: 10px;
+        font-size: 14px;
+        transition: all 0.3s;
+    }
+    
+    .form-group input:focus,
+    .form-group select:focus {
+        outline: none;
+        border-color: #1E3A8A;
+        box-shadow: 0 0 0 3px rgba(30,58,138,0.1);
+    }
+    
+    .form-group small {
+        display: block;
+        margin-top: 5px;
+        font-size: 11px;
+        color: #6B7280;
+    }
+    
+    /* Password Wrapper */
+    .password-wrapper {
+        position: relative;
+    }
+    
+    .password-wrapper input {
+        padding-right: 40px;
+    }
+    
+    .toggle-password {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        cursor: pointer;
+        color: #9CA3AF;
+        transition: color 0.3s;
+    }
+    
+    .toggle-password:hover {
+        color: #1E3A8A;
+    }
+    
+    /* Form Actions */
+    .form-actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid #E5E7EB;
+    }
+    
+    .btn-primary {
+        background: #FF6B6B;
+        color: white;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .btn-primary:hover {
+        background: #e55a5a;
+        transform: translateY(-1px);
+    }
+    
+    .btn-secondary {
+        background: #F3F4F6;
+        color: #374151;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .btn-secondary:hover {
+        background: #E5E7EB;
+    }
+    
+    /* Table Styles */
+    .table-responsive {
+        overflow-x: auto;
+    }
+    
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    .data-table thead {
+        background: #F9FAFB;
+    }
+    
+    .data-table th {
+        padding: 12px 16px;
+        text-align: left;
+        font-size: 13px;
+        font-weight: 600;
+        color: #374151;
+        border-bottom: 1px solid #E5E7EB;
+    }
+    
+    .data-table td {
+        padding: 14px 16px;
+        border-bottom: 1px solid #E5E7EB;
+        font-size: 14px;
+        vertical-align: middle;
+    }
+    
+    .user-row {
+        transition: background 0.2s;
+        animation: fadeInRow 0.3s ease backwards;
+    }
+    
+    @keyframes fadeInRow {
+        from {
+            opacity: 0;
+            transform: translateX(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+    
+    .user-row:hover {
+        background: #F9FAFB;
     }
     
     /* User Name Cell */
@@ -574,14 +911,15 @@ include '../templates/sidebar.php';
     }
     
     .user-avatar-sm {
-        width: 32px;
-        height: 32px;
+        width: 35px;
+        height: 35px;
         background: #F3F4F6;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         color: #1E3A8A;
+        font-size: 18px;
     }
     
     /* Status Badges */
@@ -589,7 +927,7 @@ include '../templates/sidebar.php';
         display: inline-flex;
         align-items: center;
         gap: 5px;
-        padding: 4px 10px;
+        padding: 4px 12px;
         border-radius: 20px;
         font-size: 11px;
         font-weight: 600;
@@ -608,7 +946,7 @@ include '../templates/sidebar.php';
     /* Action Buttons */
     .action-buttons {
         display: flex;
-        gap: 5px;
+        gap: 6px;
         flex-wrap: wrap;
     }
     
@@ -636,6 +974,50 @@ include '../templates/sidebar.php';
     .btn-icon.toggle:hover { background: #FEE2E2; color: #EF4444; }
     .btn-icon.delete:hover { background: #FEE2E2; color: #DC2626; }
     
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 40px;
+    }
+    
+    .empty-state i {
+        font-size: 48px;
+        color: #D1D5DB;
+        margin-bottom: 10px;
+    }
+    
+    .empty-state p {
+        color: #6B7280;
+    }
+    
+    /* Info Note */
+    .info-note {
+        background: #F0F9FF;
+        border-left: 4px solid #1E3A8A;
+        padding: 12px 20px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 13px;
+        margin-top: 20px;
+    }
+    
+    .info-note i {
+        font-size: 18px;
+        color: #1E3A8A;
+    }
+    
+    .info-note a {
+        color: #1E3A8A;
+        font-weight: 600;
+        text-decoration: none;
+    }
+    
+    .info-note a:hover {
+        text-decoration: underline;
+    }
+    
     /* Modal */
     .modal {
         display: none;
@@ -652,20 +1034,21 @@ include '../templates/sidebar.php';
     
     .modal-content {
         background: white;
-        border-radius: 16px;
+        border-radius: 20px;
         width: 90%;
         max-width: 500px;
         animation: modalSlideIn 0.3s ease;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.2);
     }
     
     @keyframes modalSlideIn {
         from {
             opacity: 0;
-            transform: translateY(-50px);
+            transform: translateY(-50px) scale(0.95);
         }
         to {
             opacity: 1;
-            transform: translateY(0);
+            transform: translateY(0) scale(1);
         }
     }
     
@@ -675,6 +1058,8 @@ include '../templates/sidebar.php';
         display: flex;
         justify-content: space-between;
         align-items: center;
+        background: #F9FAFB;
+        border-radius: 20px 20px 0 0;
     }
     
     .modal-header h3 {
@@ -697,76 +1082,13 @@ include '../templates/sidebar.php';
         padding: 24px;
     }
     
-    /* Password Wrapper */
-    .password-wrapper {
-        position: relative;
-    }
-    
-    .password-wrapper input {
-        padding-right: 40px;
-    }
-    
-    .toggle-password {
-        position: absolute;
-        right: 12px;
-        top: 50%;
-        transform: translateY(-50%);
-        cursor: pointer;
-        color: #9CA3AF;
-    }
-    
-    .toggle-password:hover {
-        color: #1E3A8A;
-    }
-    
     .disabled-input {
         background: #F9FAFB;
         cursor: not-allowed;
     }
     
-    .optional {
-        font-weight: normal;
-        font-size: 11px;
-        color: #6B7280;
-    }
-    
     .text-center {
         text-align: center;
-    }
-    
-    .empty-state {
-        text-align: center;
-        padding: 40px;
-    }
-    
-    .empty-state i {
-        font-size: 48px;
-        color: #D1D5DB;
-        margin-bottom: 10px;
-    }
-    
-    .empty-state p {
-        color: #6B7280;
-    }
-    
-    /* Animations */
-    .animate-card {
-        animation: fadeInUp 0.4s ease;
-    }
-    
-    .animate-card-delayed {
-        animation: fadeInUp 0.4s ease 0.1s both;
-    }
-    
-    @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
     }
     
     /* Responsive */
@@ -779,18 +1101,52 @@ include '../templates/sidebar.php';
             justify-content: center;
         }
         
+        .search-form {
+            flex-direction: column;
+        }
+        
+        .search-box {
+            width: 100%;
+        }
+        
+        .btn-search, .btn-clear {
+            width: 100%;
+            text-align: center;
+            justify-content: center;
+        }
+        
         .add-user-form .form-row {
             grid-template-columns: 1fr;
             gap: 15px;
+        }
+        
+        .form-actions {
+            flex-direction: column;
+        }
+        
+        .btn-primary, .btn-secondary {
+            justify-content: center;
+            width: 100%;
         }
         
         .action-buttons {
             justify-content: center;
         }
         
+        .data-table th, 
+        .data-table td {
+            padding: 10px 8px;
+            font-size: 12px;
+        }
+        
         .modal-content {
             width: 95%;
             margin: 20px;
+        }
+        
+        .info-note {
+            flex-direction: column;
+            text-align: center;
         }
     }
 </style>
@@ -838,31 +1194,44 @@ include '../templates/sidebar.php';
     }
     
     // Form submit loading states
-    document.getElementById('addUserForm')?.addEventListener('submit', function() {
-        const btn = this.querySelector('button[type="submit"]');
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Adding...';
-        btn.disabled = true;
-    });
+    const addForm = document.getElementById('addUserForm');
+    const addSubmitBtn = document.getElementById('addSubmitBtn');
     
-    document.getElementById('editUserForm')?.addEventListener('submit', function(e) {
-        const password = document.getElementById('edit_password').value;
-        const confirm = document.getElementById('edit_confirm_password').value;
-        
-        if (password !== confirm) {
-            e.preventDefault();
-            showToast('Passwords do not match!', 'error');
-            return;
-        }
-        
-        if (password.length > 0 && password.length < 6) {
-            e.preventDefault();
-            showToast('Password must be at least 6 characters!', 'error');
-            return;
-        }
-        
-        const btn = this.querySelector('button[type="submit"]');
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
-        btn.disabled = true;
+    if (addForm) {
+        addForm.addEventListener('submit', function() {
+            addSubmitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Adding...';
+            addSubmitBtn.disabled = true;
+        });
+    }
+    
+    const editForm = document.getElementById('editUserForm');
+    const editSubmitBtn = document.getElementById('editSubmitBtn');
+    
+    if (editForm) {
+        editForm.addEventListener('submit', function(e) {
+            const password = document.getElementById('edit_password').value;
+            const confirm = document.getElementById('edit_confirm_password').value;
+            
+            if (password !== confirm) {
+                e.preventDefault();
+                showToast('Passwords do not match!', 'error');
+                return;
+            }
+            
+            if (password.length > 0 && password.length < 6) {
+                e.preventDefault();
+                showToast('Password must be at least 6 characters!', 'error');
+                return;
+            }
+            
+            editSubmitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+            editSubmitBtn.disabled = true;
+        });
+    }
+    
+    // Animate rows
+    document.querySelectorAll('.user-row').forEach((row, index) => {
+        row.style.animationDelay = `${index * 0.03}s`;
     });
 </script>
 
