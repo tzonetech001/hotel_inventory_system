@@ -44,6 +44,12 @@
                 ?>
                 <li class="menu-divider"></li>
                 <li class="menu-header">Management</li>
+                <li class="<?php echo ($current_page == 'manage_users.php') ? 'active' : ''; ?>">
+    <a href="<?php echo APP_URL; ?>/manager/manage_users.php">
+        <i class="fas fa-users-gear"></i>
+        <span>User Management</span>
+    </a>
+</li>
                 <li class="<?php echo ($current_page == 'reports.php') ? 'active' : ''; ?>">
                     <a href="<?php echo APP_URL; ?>/manager/reports.php"><i class="fas fa-chart-line"></i> <span>Reports</span></a>
                 </li>
