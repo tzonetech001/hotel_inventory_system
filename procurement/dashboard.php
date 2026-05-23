@@ -31,7 +31,7 @@ $stats['delivered_pos'] = $result->fetch_assoc()['count'];
 $recent_pos = $db->query("SELECT po.*, s.company_name 
                            FROM purchase_orders po
                            JOIN suppliers s ON po.supplier_id = s.id
-                           ORDER BY po.created_at DESC LIMIT 10")->fetch_all(MYSQLI_ASSOC);
+                           ORDER BY po.created_at DESC LIMIT 8")->fetch_all(MYSQLI_ASSOC);
 
 // Low stock items that need reordering
 $low_stock_items = getLowStockItems();
@@ -49,8 +49,8 @@ include '../templates/sidebar.php';
     <!-- Statistics Cards -->
     <div class="stats-grid">
         <div class="stat-card">
-            <div class="stat-icon" style="background: #1E3A8A20;">
-                <i class="fas fa-file-invoice" style="color: #1E3A8A;"></i>
+            <div class="stat-icon total">
+                <i class="fas fa-file-invoice"></i>
             </div>
             <div class="stat-info">
                 <h3>Total Orders</h3>
@@ -59,8 +59,8 @@ include '../templates/sidebar.php';
         </div>
         
         <div class="stat-card">
-            <div class="stat-icon" style="background: #F59E0B20;">
-                <i class="fas fa-clock" style="color: #F59E0B;"></i>
+            <div class="stat-icon pending">
+                <i class="fas fa-clock"></i>
             </div>
             <div class="stat-info">
                 <h3>Pending Approval</h3>
@@ -69,8 +69,8 @@ include '../templates/sidebar.php';
         </div>
         
         <div class="stat-card">
-            <div class="stat-icon" style="background: #10B98120;">
-                <i class="fas fa-check-circle" style="color: #10B981;"></i>
+            <div class="stat-icon approved">
+                <i class="fas fa-check-circle"></i>
             </div>
             <div class="stat-info">
                 <h3>Approved Orders</h3>
@@ -79,8 +79,8 @@ include '../templates/sidebar.php';
         </div>
         
         <div class="stat-card">
-            <div class="stat-icon" style="background: #FF6B6B20;">
-                <i class="fas fa-truck" style="color: #FF6B6B;"></i>
+            <div class="stat-icon delivered">
+                <i class="fas fa-truck"></i>
             </div>
             <div class="stat-info">
                 <h3>Delivered</h3>
@@ -94,6 +94,7 @@ include '../templates/sidebar.php';
         <div class="card">
             <div class="card-header">
                 <h3><i class="fas fa-exclamation-triangle" style="color: #FF6B6B;"></i> Items Need Reorder</h3>
+                <a href="create_po.php" class="btn-link">Create PO <i class="fas fa-arrow-right"></i></a>
             </div>
             <div class="card-body">
                 <?php if(count($low_stock_items) > 0): ?>
@@ -109,7 +110,7 @@ include '../templates/sidebar.php';
                                 </div>
                                 <div class="alert-actions">
                                     <a href="create_po.php?item_id=<?php echo $item['id']; ?>" class="btn-small primary">
-                                        Create PO
+                                        <i class="fas fa-plus"></i> Create PO
                                     </a>
                                 </div>
                             </div>
@@ -132,19 +133,19 @@ include '../templates/sidebar.php';
             <div class="card-body">
                 <div class="quick-grid">
                     <a href="create_po.php" class="quick-card">
-                        <i class="fas fa-plus-circle" style="color: #1E3A8A;"></i>
+                        <i class="fas fa-plus-circle"></i>
                         <span>Create New PO</span>
                     </a>
                     <a href="view_po.php" class="quick-card">
-                        <i class="fas fa-list" style="color: #10B981;"></i>
+                        <i class="fas fa-list"></i>
                         <span>View All Orders</span>
                     </a>
                     <a href="track_delivery.php" class="quick-card">
-                        <i class="fas fa-truck" style="color: #F59E0B;"></i>
+                        <i class="fas fa-truck"></i>
                         <span>Track Deliveries</span>
                     </a>
                     <a href="../manager/suppliers.php" class="quick-card">
-                        <i class="fas fa-building" style="color: #FF6B6B;"></i>
+                        <i class="fas fa-building"></i>
                         <span>Manage Suppliers</span>
                     </a>
                 </div>
@@ -175,14 +176,14 @@ include '../templates/sidebar.php';
                         <?php foreach($recent_pos as $po): ?>
                             <tr>
                                 <td><strong><?php echo $po['po_number']; ?></strong></td>
-                                <td><?php echo htmlspecialchars($po['company_name']); ?></td>
-                                <td><?php echo date('d/m/Y', strtotime($po['order_date'])); ?></td>
+                                <td><?php echo htmlspecialchars($po['company_name']); ?></td
+                                <td><?php echo date('d M Y', strtotime($po['order_date'])); ?></td>
                                 <td>TZS <?php echo number_format($po['total_amount'], 2); ?></td>
                                 <td>
-                                    <span class="status-<?php echo $po['status']; ?>">
+                                    <span class="status-badge status-<?php echo $po['status']; ?>">
                                         <?php echo ucfirst($po['status']); ?>
                                     </span>
-                                </td>
+                                 </td
                                 <td>
                                     <a href="view_po.php" class="btn-icon">
                                         <i class="fas fa-eye"></i>
@@ -195,34 +196,64 @@ include '../templates/sidebar.php';
             </div>
         </div>
     </div>
+    
+    <!-- Floating Action Button -->
+    <a href="create_po.php" class="fab">
+        <i class="fas fa-plus"></i>
+    </a>
 </div>
 
 <style>
     .stats-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
         gap: 20px;
         margin-bottom: 30px;
     }
     
     .stat-card {
         background: white;
-        border-radius: 12px;
+        border-radius: 16px;
         padding: 20px;
         display: flex;
         align-items: center;
         gap: 15px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-2px);
     }
     
     .stat-icon {
-        width: 50px;
-        height: 50px;
-        border-radius: 12px;
+        width: 55px;
+        height: 55px;
+        border-radius: 14px;
         display: flex;
         align-items: center;
         justify-content: center;
         font-size: 24px;
+    }
+    
+    .stat-icon.total {
+        background: #1E3A8A20;
+        color: #1E3A8A;
+    }
+    
+    .stat-icon.pending {
+        background: #FEF3C7;
+        color: #F59E0B;
+    }
+    
+    .stat-icon.approved {
+        background: #D1FAE5;
+        color: #10B981;
+    }
+    
+    .stat-icon.delivered {
+        background: #DBEAFE;
+        color: #1E40AF;
     }
     
     .stat-info h3 {
@@ -239,9 +270,51 @@ include '../templates/sidebar.php';
     
     .two-columns {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
         gap: 25px;
         margin-bottom: 25px;
+    }
+    
+    .card {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
+    
+    .card-header {
+        padding: 18px 24px;
+        background: #F9FAFB;
+        border-bottom: 1px solid #E5E7EB;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .card-header h3 {
+        margin: 0;
+        font-size: 16px;
+        color: #1E3A8A;
+    }
+    
+    .btn-link {
+        color: #1E3A8A;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 500;
+    }
+    
+    .btn-link:hover {
+        color: #FF6B6B;
+    }
+    
+    .card-body {
+        padding: 20px;
+    }
+    
+    .alert-list {
+        max-height: 300px;
+        overflow-y: auto;
     }
     
     .alert-item {
@@ -271,7 +344,9 @@ include '../templates/sidebar.php';
         border-radius: 6px;
         text-decoration: none;
         font-size: 12px;
-        display: inline-block;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
     }
     
     .btn-small.primary {
@@ -295,14 +370,14 @@ include '../templates/sidebar.php';
     
     .quick-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
         gap: 15px;
     }
     
     .quick-card {
         background: #F9FAFB;
-        padding: 20px;
-        border-radius: 10px;
+        padding: 20px 15px;
+        border-radius: 12px;
         text-align: center;
         text-decoration: none;
         transition: all 0.3s;
@@ -310,23 +385,23 @@ include '../templates/sidebar.php';
     }
     
     .quick-card i {
-        font-size: 32px;
+        font-size: 28px;
         display: block;
         margin-bottom: 10px;
     }
     
     .quick-card span {
-        font-size: 14px;
+        font-size: 13px;
         color: #374151;
     }
     
     .quick-card:hover {
-        transform: translateY(-2px);
+        transform: translateY(-3px);
         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         border-color: #1E3A8A;
     }
     
-    .status-pending, .status-approved, .status-rejected, .status-delivered, .status-confirmed {
+    .status-badge {
         display: inline-block;
         padding: 4px 10px;
         border-radius: 20px;
@@ -344,29 +419,70 @@ include '../templates/sidebar.php';
         color: #065F46;
     }
     
-    .status-rejected {
-        background: #FEE2E2;
-        color: #991B1B;
-    }
-    
     .status-delivered {
         background: #DBEAFE;
         color: #1E40AF;
     }
     
-    .btn-link {
-        color: #1E3A8A;
+    .fab {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        width: 56px;
+        height: 56px;
+        background: #FF6B6B;
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         text-decoration: none;
-        font-size: 13px;
+        font-size: 24px;
+        box-shadow: 0 4px 12px rgba(255,107,107,0.4);
+        transition: all 0.3s;
+        z-index: 100;
     }
     
-    .btn-link:hover {
-        color: #FF6B6B;
+    .fab:hover {
+        transform: scale(1.1);
+        background: #e55a5a;
     }
     
     @media (max-width: 768px) {
         .two-columns {
             grid-template-columns: 1fr;
+            gap: 15px;
+        }
+        
+        .stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+        
+        .stat-card {
+            padding: 15px;
+        }
+        
+        .stat-icon {
+            width: 45px;
+            height: 45px;
+            font-size: 20px;
+        }
+        
+        .stat-number {
+            font-size: 22px;
+        }
+        
+        .quick-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        
+        .fab {
+            bottom: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            font-size: 20px;
         }
     }
 </style>
