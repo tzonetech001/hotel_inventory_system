@@ -115,7 +115,7 @@ $count_sql = "SELECT COUNT(*) as total
               WHERE $where_clause";
 $count_result = $db->query($count_sql);
 $total_items = $count_result->fetch_assoc()['total'];
-$total_pages = ceil($total_items / $limit);
+$total_pages = $total_items > 0 ? ceil($total_items / $limit) : 1;
 
 // ============================================
 // GET STOCK MOVEMENTS DATA
@@ -125,6 +125,7 @@ $sql = "SELECT sm.*,
                i.item_name, 
                i.unit, 
                u.fullname as performed_by_name,
+               po.po_number,
                CASE 
                    WHEN sm.movement_type = 'IN' THEN 'Stock In'
                    ELSE 'Stock Out'
@@ -132,6 +133,7 @@ $sql = "SELECT sm.*,
         FROM stock_movements sm
         JOIN inventory_items i ON sm.item_id = i.id
         JOIN users u ON sm.performed_by = u.id
+        LEFT JOIN purchase_orders po ON sm.reference_no = CONCAT('PO-', po.po_number)
         WHERE $where_clause
         ORDER BY sm.created_at DESC
         LIMIT $offset, $limit";
@@ -153,14 +155,20 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
 // ============================================
 
 $summary_sql = "SELECT 
-                    SUM(CASE WHEN movement_type = 'IN' THEN quantity ELSE 0 END) as total_in,
-                    SUM(CASE WHEN movement_type = 'OUT' THEN quantity ELSE 0 END) as total_out,
+                    COALESCE(SUM(CASE WHEN movement_type = 'IN' THEN quantity ELSE 0 END), 0) as total_in,
+                    COALESCE(SUM(CASE WHEN movement_type = 'OUT' THEN quantity ELSE 0 END), 0) as total_out,
                     COUNT(*) as total_transactions,
                     COUNT(DISTINCT item_id) as unique_items
                 FROM stock_movements sm
                 WHERE $where_clause";
 $summary_result = $db->query($summary_sql);
 $summary = $summary_result->fetch_assoc();
+
+// Ensure values are numbers (not null)
+$summary['total_in'] = (float)$summary['total_in'];
+$summary['total_out'] = (float)$summary['total_out'];
+$summary['total_transactions'] = (int)$summary['total_transactions'];
+$summary['unique_items'] = (int)$summary['unique_items'];
 
 // Calculate percentages for chart
 $total_movements = $summary['total_in'] + $summary['total_out'];
@@ -339,7 +347,7 @@ include '../templates/sidebar.php';
                                 <th>Item</th>
                                 <th width="100">Type</th>
                                 <th width="100">Quantity</th>
-                                <th width="130">Reference</th>
+                                <th width="160">Reference</th>
                                 <th width="150">Performed By</th>
                                 <th>Notes</th>
                             </tr>
@@ -383,9 +391,28 @@ include '../templates/sidebar.php';
                                         <?php endif; ?>
                                     </td>
                                     <td>
-                                        <?php if($movement['reference_no']): ?>
+                                        <?php 
+                                        // Format reference number properly
+                                        $reference_display = '';
+                                        if ($movement['reference_no']) {
+                                            // Check if reference contains PO number pattern
+                                            if (strpos($movement['reference_no'], 'PO-') !== false || strpos($movement['reference_no'], 'Purchase Order') !== false) {
+                                                // Extract PO number if exists
+                                                if (preg_match('/PO-\d+/', $movement['reference_no'], $matches)) {
+                                                    $reference_display = $matches[0];
+                                                } elseif ($movement['po_number']) {
+                                                    $reference_display = 'PO-' . $movement['po_number'];
+                                                } else {
+                                                    $reference_display = htmlspecialchars($movement['reference_no']);
+                                                }
+                                            } else {
+                                                $reference_display = htmlspecialchars($movement['reference_no']);
+                                            }
+                                        }
+                                        ?>
+                                        <?php if($reference_display): ?>
                                             <span class="reference-badge">
-                                                <i class="fas fa-hashtag"></i> <?php echo htmlspecialchars($movement['reference_no']); ?>
+                                                <i class="fas fa-file-invoice"></i> <?php echo $reference_display; ?>
                                             </span>
                                         <?php else: ?>
                                             <span class="no-reference">—</span>
@@ -406,7 +433,11 @@ include '../templates/sidebar.php';
                                     <td>
                                         <div class="notes-cell" title="<?php echo htmlspecialchars($movement['notes'] ?? ''); ?>">
                                             <?php if($movement['notes']): ?>
-                                                <?php echo nl2br(htmlspecialchars(substr($movement['notes'], 0, 60))); ?>
+                                                <?php 
+                                                $clean_notes = str_replace('PO Delivery - Order #', 'PO ', $movement['notes']);
+                                                $clean_notes = str_replace('New Purchase Order', 'PO Received', $clean_notes);
+                                                echo nl2br(htmlspecialchars(substr($clean_notes, 0, 60))); 
+                                                ?>
                                                 <?php if(strlen($movement['notes']) > 60): ?>
                                                     <span class="notes-more">...</span>
                                                 <?php endif; ?>

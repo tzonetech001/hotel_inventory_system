@@ -12,7 +12,7 @@
         <?php
         $current_page = basename($_SERVER['PHP_SELF']);
         $current_dir = basename(dirname($_SERVER['PHP_SELF']));
-        $role = $_SESSION['role'];
+        $role = $_SESSION['role'] ?? 'Guest';
         
         // Dashboard - always visible
         $active_class = ($current_page == 'dashboard.php') ? 'active' : '';
@@ -34,9 +34,6 @@
                 <li class="menu-header">System</li>
                 <li><a href="<?php echo APP_URL; ?>/manager/reports.php"><i class="fas fa-chart-line"></i> <span>Reports</span></a></li>
                 <li><a href="<?php echo APP_URL; ?>/manager/suppliers.php"><i class="fas fa-truck"></i> <span>Suppliers</span></a></li>
-                <li class="<?php echo ($current_page == 'stock_history.php') ? 'active' : ''; ?>">
-        <a href="<?php echo APP_URL; ?>/storekeeper/stock_history.php"><i class="fas fa-history"></i> <span>Stock History</span></a>
-    </li>
                 <?php
                 break;
                 
@@ -45,11 +42,8 @@
                 <li class="menu-divider"></li>
                 <li class="menu-header">Management</li>
                 <li class="<?php echo ($current_page == 'manage_users.php') ? 'active' : ''; ?>">
-    <a href="<?php echo APP_URL; ?>/manager/manage_users.php">
-        <i class="fas fa-users-gear"></i>
-        <span>User Management</span>
-    </a>
-</li>
+                    <a href="<?php echo APP_URL; ?>/manager/manage_users.php"><i class="fas fa-users-gear"></i> <span>User Management</span></a>
+                </li>
                 <li class="<?php echo ($current_page == 'reports.php') ? 'active' : ''; ?>">
                     <a href="<?php echo APP_URL; ?>/manager/reports.php"><i class="fas fa-chart-line"></i> <span>Reports</span></a>
                 </li>
@@ -60,41 +54,31 @@
                     <a href="<?php echo APP_URL; ?>/manager/suppliers.php"><i class="fas fa-truck"></i> <span>Suppliers</span></a>
                 </li>
                 <li><a href="<?php echo APP_URL; ?>/storekeeper/view_items.php"><i class="fas fa-boxes"></i> <span>Inventory</span></a></li>
-                <li class="<?php echo ($current_page == 'stock_history.php') ? 'active' : ''; ?>">
-        <a href="<?php echo APP_URL; ?>/storekeeper/stock_history.php"><i class="fas fa-history"></i> <span>Stock History</span></a>
-    </li>
                 <?php
                 break;
                 
-     case 'Storekeeper':
-    ?>
-    <li class="menu-divider"></li>
-    <li class="menu-header">Inventory</li>
-    <li class="<?php echo ($current_page == 'add_item.php') ? 'active' : ''; ?>">
-        <a href="<?php echo APP_URL; ?>/storekeeper/add_item.php"><i class="fas fa-plus-circle"></i> <span>Add Item</span></a>
-    </li>
-    <li class="<?php echo ($current_page == 'view_items.php') ? 'active' : ''; ?>">
-        <a href="<?php echo APP_URL; ?>/storekeeper/view_items.php"><i class="fas fa-list"></i> <span>View Items</span></a>
-    </li>
-    <li class="<?php echo ($current_page == 'stock_in.php') ? 'active' : ''; ?>">
-        <a href="<?php echo APP_URL; ?>/storekeeper/stock_in.php"><i class="fas fa-arrow-down"></i> <span>Stock In</span></a>
-    </li>
-    <li class="<?php echo ($current_page == 'stock_out.php') ? 'active' : ''; ?>">
-        <a href="<?php echo APP_URL; ?>/storekeeper/stock_out.php"><i class="fas fa-arrow-up"></i> <span>Stock Out</span></a>
-    </li>
-    <li class="menu-divider"></li>
-    <li class="<?php echo ($current_page == 'confirm_delivery.php') ? 'active' : ''; ?>">
-    <a href="<?php echo APP_URL; ?>/storekeeper/confirm_delivery.php">
-        <i class="fas fa-check-double"></i>
-        <span>Confirm Deliveries</span>
-    </a>
-</li>
-    
-    <li class="<?php echo ($current_page == 'stock_history.php') ? 'active' : ''; ?>">
-        <a href="<?php echo APP_URL; ?>/storekeeper/stock_history.php"><i class="fas fa-history"></i> <span>Stock History</span></a>
-    </li>
-    <?php
-    break;
+            case 'Storekeeper':
+                ?>
+                <li class="menu-divider"></li>
+                <li class="menu-header">Inventory</li>
+                <li class="<?php echo ($current_page == 'add_item.php') ? 'active' : ''; ?>">
+                    <a href="<?php echo APP_URL; ?>/storekeeper/add_item.php"><i class="fas fa-plus-circle"></i> <span>Add Item</span></a>
+                </li>
+                <li class="<?php echo ($current_page == 'view_items.php') ? 'active' : ''; ?>">
+                    <a href="<?php echo APP_URL; ?>/storekeeper/view_items.php"><i class="fas fa-list"></i> <span>View Items</span></a>
+                </li>
+                <li class="<?php echo ($current_page == 'stock_in.php') ? 'active' : ''; ?>">
+                    <a href="<?php echo APP_URL; ?>/storekeeper/stock_in.php"><i class="fas fa-arrow-down"></i> <span>Stock In</span></a>
+                </li>
+                <li class="<?php echo ($current_page == 'stock_out.php') ? 'active' : ''; ?>">
+                    <a href="<?php echo APP_URL; ?>/storekeeper/stock_out.php"><i class="fas fa-arrow-up"></i> <span>Stock Out</span></a>
+                </li>
+                <li class="menu-divider"></li>
+                <li class="<?php echo ($current_page == 'confirm_delivery.php') ? 'active' : ''; ?>">
+                    <a href="<?php echo APP_URL; ?>/storekeeper/confirm_delivery.php"><i class="fas fa-check-double"></i> <span>Confirm Deliveries</span></a>
+                </li>
+                <?php
+                break;
                 
             case 'Procurement Officer':
                 ?>
@@ -110,9 +94,6 @@
                     <a href="<?php echo APP_URL; ?>/procurement/track_delivery.php"><i class="fas fa-map-marker-alt"></i> <span>Track Delivery</span></a>
                 </li>
                 <li><a href="<?php echo APP_URL; ?>/manager/suppliers.php"><i class="fas fa-truck"></i> <span>Suppliers</span></a></li>
-                <li class="<?php echo ($current_page == 'stock_history.php') ? 'active' : ''; ?>">
-        <a href="<?php echo APP_URL; ?>/storekeeper/stock_history.php"><i class="fas fa-history"></i> <span>Stock History</span></a>
-    </li>
                 <?php
                 break;
                 
@@ -126,15 +107,35 @@
                 <?php
                 break;
         }
+        
+        // Stock History - for all roles except Supplier
+        if ($role !== 'Supplier' && $role !== 'Guest') {
+            ?>
+            <li class="<?php echo ($current_page == 'stock_history.php') ? 'active' : ''; ?>">
+                <a href="<?php echo APP_URL; ?>/storekeeper/stock_history.php"><i class="fas fa-history"></i> <span>Stock History</span></a>
+            </li>
+            <?php
+        }
         ?>
-        <!-- Add this before the logout link -->
-<li class="menu-divider"></li>
-<li class="menu-header">Account</li>
-<li>
-    <a href="<?php echo APP_URL; ?>/supplier/profile.php">
-        <i class="fas fa-user-circle"></i> <span>My Profile</span>
-    </a>
-</li>
+        
+        <!-- Profile Section -->
+        <li class="menu-divider"></li>
+        <li class="menu-header">Account</li>
+        <li>
+            <?php if ($role === 'Supplier'): ?>
+                <!-- Supplier uses their own profile page -->
+                <a href="<?php echo APP_URL; ?>/supplier/profile.php">
+                    <i class="fas fa-user-circle"></i> <span>My Profile</span>
+                </a>
+            <?php elseif ($role !== 'Guest'): ?>
+                <!-- All other roles use templates/profile.php -->
+                <a href="<?php echo APP_URL; ?>/templates/profile.php">
+                    <i class="fas fa-user-circle"></i> <span>My Profile</span>
+                </a>
+            <?php endif; ?>
+        </li>
+
+        <!-- Logout -->
         <li class="menu-divider"></li>
         <li class="menu-footer">
             <a href="<?php echo APP_URL; ?>/auth/logout.php" class="logout-link">
@@ -145,6 +146,7 @@
 </div>
 
 <style>
+    /* Your existing CSS remains exactly the same */
     .sidebar {
         position: fixed;
         top: 65px;

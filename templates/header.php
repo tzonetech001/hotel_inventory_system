@@ -568,7 +568,21 @@
                 </div>
                 <ul class="dropdown-menu">
                     <li>
-                        <a href="<?php echo APP_URL; ?>/templates/profile.php">
+                        <?php 
+                        // Determine the correct profile page based on role
+                        $role = $_SESSION['role'] ?? 'Guest';
+                        $profile_link = '';
+                        
+                        switch($role) {
+                            case 'Supplier':
+                                $profile_link = APP_URL . '/supplier/profile.php';
+                                break;
+                            default:
+                                $profile_link = APP_URL . '/templates/profile.php';
+                                break;
+                        }
+                        ?>
+                        <a href="<?php echo $profile_link; ?>">
                             <i class="fas fa-user-circle"></i> My Profile
                         </a>
                     </li>
