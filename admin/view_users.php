@@ -130,7 +130,7 @@ include '../templates/sidebar.php';
             </button>
         </form>
         
-        <a href="add_user.php" class="btn-primary">
+        <a href="add_user.php" class="btn-clear">
             <i class="fas fa-plus"></i> Add User
         </a>
     </div>

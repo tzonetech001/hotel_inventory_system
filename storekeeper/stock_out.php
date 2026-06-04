@@ -139,10 +139,10 @@ include '../templates/sidebar.php';
                             <textarea name="reason" id="reason" rows="2" placeholder="e.g., Daily usage, Guest request, Maintenance..."></textarea>
                         </div>
                         
-                        <div class="form-group">
-                            <label><i class="fas fa-hashtag"></i> Reference Number</label>
+                        <!-- <div class="form-group">
+                            <label><i class="fas fa-hashtag"></i> Reference </label>
                             <input type="text" name="reference" id="reference" placeholder="e.g., Requisition #, Department Request #">
-                        </div>
+                        </div> -->
                         
                         <div class="warning-box" id="warningBox" style="display: none;">
                             <i class="fas fa-exclamation-triangle"></i>

@@ -72,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
 }
 
 // ============================================
-// HANDLE PASSWORD CHANGE
+// HANDLE PASSWORD CHANGE (Integrated into Profile)
 // ============================================
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['change_password'])) {
     $current_password = $_POST['current_password'];
@@ -104,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['change_password'])) {
                 logActivity(0, 'Supplier Change Password', "Changed password for supplier ID: $supplier_id", 'supplier');
                 $_SESSION['toast_message'] = "Password changed successfully!";
                 $_SESSION['toast_type'] = "success";
-                header("Location: profile.php?tab=security");
+                header("Location: profile.php?tab=profile");
                 exit();
             } else {
                 $error = "Error changing password!";
@@ -158,21 +158,19 @@ include '../templates/sidebar.php';
     <!-- Profile Tabs -->
     <div class="profile-tabs">
         <a href="?tab=profile" class="profile-tab <?php echo $active_tab == 'profile' ? 'active' : ''; ?>">
-            <i class="fas fa-user"></i> Profile Info
-        </a>
-        <a href="?tab=security" class="profile-tab <?php echo $active_tab == 'security' ? 'active' : ''; ?>">
-            <i class="fas fa-lock"></i> Security
+            <i class="fas fa-user"></i> Profile
         </a>
         <a href="?tab=orders" class="profile-tab <?php echo $active_tab == 'orders' ? 'active' : ''; ?>">
             <i class="fas fa-shopping-cart"></i> Order History
         </a>
     </div>
     
-    <!-- Profile Tab Content -->
+    <!-- Profile & Security Tab Content (Combined) -->
     <?php if($active_tab == 'profile'): ?>
     <div class="two-column-layout">
-        <!-- Left Column: Company Info Card -->
+        <!-- Left Column: Company Info & Security -->
         <div class="info-column">
+            <!-- Company Information Card -->
             <div class="card animate-card">
                 <div class="card-header">
                     <h3><i class="fas fa-building"></i> Company Information</h3>
@@ -213,22 +211,69 @@ include '../templates/sidebar.php';
                 </div>
             </div>
             
-            <div class="card tips-card animate-card-delayed">
+            <!-- Change Password Card (Integrated here) -->
+            <div class="card animate-card-delayed">
                 <div class="card-header">
-                    <h3><i class="fas fa-lightbulb"></i> Quick Tips</h3>
+                    <h3><i class="fas fa-key"></i> Change Password</h3>
+                    <p class="card-subtitle">Update your password to keep your account secure</p>
                 </div>
                 <div class="card-body">
-                    <ul class="tips-list">
-                        <li><i class="fas fa-check-circle"></i> Keep your contact information up to date</li>
-                        <li><i class="fas fa-check-circle"></i> Use a strong password for security</li>
-                        <li><i class="fas fa-check-circle"></i> Check order history for past purchases</li>
-                        <li><i class="fas fa-check-circle"></i> Contact hotel management for any issues</li>
-                    </ul>
+                    <form method="POST" action="" id="passwordForm">
+                        <div class="form-group">
+                            <label><i class="fas fa-lock"></i> Current Password <span class="required">*</span></label>
+                            <div class="password-wrapper">
+                                <input type="password" name="current_password" id="current_password" required>
+                                <i class="fas fa-eye toggle-password" data-target="current_password"></i>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label><i class="fas fa-key"></i> New Password <span class="required">*</span></label>
+                            <div class="password-wrapper">
+                                <input type="password" name="new_password" id="new_password" required>
+                                <i class="fas fa-eye toggle-password" data-target="new_password"></i>
+                            </div>
+                            <small>Minimum 6 characters</small>
+                            
+                            <!-- Password Strength Indicator -->
+                            <div class="password-strength" id="passwordStrength">
+                                <div class="strength-bar">
+                                    <div class="strength-fill" id="strengthFill"></div>
+                                </div>
+                                <div class="strength-text" id="strengthText">Enter a password</div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label><i class="fas fa-lock"></i> Confirm New Password <span class="required">*</span></label>
+                            <div class="password-wrapper">
+                                <input type="password" name="confirm_password" id="confirm_password" required>
+                                <i class="fas fa-eye toggle-password" data-target="confirm_password"></i>
+                            </div>
+                            <div class="match-status" id="matchStatus"></div>
+                        </div>
+                        
+                        <!-- <div class="password-tips">
+                            <h4><i class="fas fa-shield-alt"></i> Password Tips:</h4>
+                            <ul>
+                                <li>Use at least 6 characters</li>
+                                <li>Mix uppercase and lowercase letters</li>
+                                <li>Include numbers and special characters</li>
+                                <li>Avoid using common words or personal info</li>
+                            </ul>
+                        </div> -->
+                        
+                        <div class="form-actions">
+                            <button type="submit" name="change_password" class="btn-primary" id="changePasswordBtn">
+                                <i class="fas fa-sync-alt"></i> Change Password
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
         
-        <!-- Right Column: Edit Profile Form -->
+        <!-- Right Column: Edit Profile Form & Tips -->
         <div class="form-column">
             <div class="card animate-card-delayed">
                 <div class="card-header">
@@ -272,92 +317,20 @@ include '../templates/sidebar.php';
                     </form>
                 </div>
             </div>
-        </div>
-    </div>
-    <?php endif; ?>
-    
-    <!-- Security Tab Content -->
-    <?php if($active_tab == 'security'): ?>
-    <div class="two-column-layout">
-        <!-- Left Column: Change Password -->
-        <div class="password-column">
-            <div class="card animate-card">
+            
+            <!-- <div class="card tips-card animate-card-delayed">
                 <div class="card-header">
-                    <h3><i class="fas fa-key"></i> Change Password</h3>
-                    <p class="card-subtitle">Update your password to keep your account secure</p>
-                </div>
-                <div class="card-body">
-                    <form method="POST" action="" id="passwordForm">
-                        <div class="form-group">
-                            <label><i class="fas fa-lock"></i> Current Password <span class="required">*</span></label>
-                            <div class="password-wrapper">
-                                <input type="password" name="current_password" id="current_password" required>
-                                <i class="fas fa-eye toggle-password" data-target="current_password"></i>
-                            </div>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label><i class="fas fa-key"></i> New Password <span class="required">*</span></label>
-                            <div class="password-wrapper">
-                                <input type="password" name="new_password" id="new_password" required>
-                                <i class="fas fa-eye toggle-password" data-target="new_password"></i>
-                            </div>
-                            <small>Minimum 6 characters</small>
-                            
-                            <!-- Password Strength Indicator -->
-                            <div class="password-strength" id="passwordStrength">
-                                <div class="strength-bar">
-                                    <div class="strength-fill" id="strengthFill"></div>
-                                </div>
-                                <div class="strength-text" id="strengthText">Enter a password</div>
-                            </div>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label><i class="fas fa-lock"></i> Confirm New Password <span class="required">*</span></label>
-                            <div class="password-wrapper">
-                                <input type="password" name="confirm_password" id="confirm_password" required>
-                                <i class="fas fa-eye toggle-password" data-target="confirm_password"></i>
-                            </div>
-                            <div class="match-status" id="matchStatus"></div>
-                        </div>
-                        
-                        <div class="password-tips">
-                            <h4><i class="fas fa-shield-alt"></i> Password Tips:</h4>
-                            <ul>
-                                <li>Use at least 6 characters</li>
-                                <li>Mix uppercase and lowercase letters</li>
-                                <li>Include numbers and special characters</li>
-                                <li>Avoid using common words or personal info</li>
-                            </ul>
-                        </div>
-                        
-                        <div class="form-actions">
-                            <button type="submit" name="change_password" class="btn-primary" id="changePasswordBtn">
-                                <i class="fas fa-sync-alt"></i> Change Password
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Right Column: Security Tips -->
-        <div class="security-tips-column">
-            <div class="card tips-card animate-card-delayed">
-                <div class="card-header">
-                    <h3><i class="fas fa-lightbulb"></i> Security Tips</h3>
+                    <h3><i class="fas fa-lightbulb"></i> Quick Tips</h3>
                 </div>
                 <div class="card-body">
                     <ul class="tips-list">
-                        <li><i class="fas fa-check-circle"></i> Never share your password with anyone</li>
-                        <li><i class="fas fa-check-circle"></i> Use a unique password for this system</li>
-                        <li><i class="fas fa-check-circle"></i> Change your password regularly</li>
-                        <li><i class="fas fa-check-circle"></i> Always log out when using shared computers</li>
-                        <li><i class="fas fa-check-circle"></i> Contact admin if you suspect unauthorized access</li>
+                        <li><i class="fas fa-check-circle"></i> Keep your contact information up to date</li>
+                        <li><i class="fas fa-check-circle"></i> Use a strong password for security</li>
+                        <li><i class="fas fa-check-circle"></i> Check order history for past purchases</li>
+                        <li><i class="fas fa-check-circle"></i> Contact hotel management for any issues</li>
                     </ul>
                 </div>
-            </div>
+            </div> -->
             
             <div class="card session-card animate-card-delayed">
                 <div class="card-header">
@@ -420,25 +393,25 @@ include '../templates/sidebar.php';
                                         <button onclick="viewOrderItems(<?php echo $order['id']; ?>)" class="btn-link">
                                             <i class="fas fa-eye"></i> View Items
                                         </button>
-                                     </td
+                            </td>
                                     <td>TZS <?php echo number_format($order['total_amount'], 2); ?></td>
                                     <td><?php echo $order['expected_delivery'] ? date('d M Y', strtotime($order['expected_delivery'])) : 'Not set'; ?></td>
                                     <td>
                                         <span class="status-badge status-<?php echo $order['status']; ?>">
                                             <?php echo ucfirst($order['status']); ?>
                                         </span>
-                                     </td
+                            </td>
                                     <td>
                                         <?php if($order['status'] == 'approved'): ?>
                                             <button onclick="markAsDelivered(<?php echo $order['id']; ?>)" class="btn-small success">
                                                 <i class="fas fa-check"></i> Mark Delivered
                                             </button>
                                         <?php endif; ?>
-                                     </td
+                                        </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
-                    </table>
+                     </>
                 </div>
             <?php else: ?>
                 <div class="empty-state">
@@ -667,6 +640,8 @@ include '../templates/sidebar.php';
         transform: translateY(-50%);
         cursor: pointer;
         color: #9CA3AF;
+        z-index: 10;
+        font-size: 16px;
     }
     
     .toggle-password:hover {
@@ -1050,4 +1025,282 @@ include '../templates/sidebar.php';
             gap: 20px;
         }
         
-        .profile-t
+        .profile-tabs {
+            justify-content: center;
+        }
+        
+        .profile-tab {
+            padding: 8px 20px;
+            font-size: 14px;
+        }
+        
+        .form-row {
+            grid-template-columns: 1fr;
+            gap: 0;
+        }
+        
+        .detail-item {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 5px;
+        }
+        
+        .card-header {
+            padding: 15px 18px;
+        }
+        
+        .card-body {
+            padding: 18px;
+        }
+        
+        .order-stats {
+            justify-content: center;
+            margin-top: 10px;
+        }
+        
+        .data-table th,
+        .data-table td {
+            padding: 10px 12px;
+            font-size: 12px;
+        }
+        
+        .btn-small {
+            padding: 4px 8px;
+            font-size: 11px;
+        }
+    }
+</style>
+
+<script>
+// ============================================
+// PASSWORD TOGGLE FUNCTIONALITY
+// ============================================
+document.querySelectorAll('.toggle-password').forEach(function(icon) {
+    icon.addEventListener('click', function() {
+        const targetId = this.getAttribute('data-target');
+        const input = document.getElementById(targetId);
+        
+        if (input) {
+            if (input.type === 'password') {
+                input.type = 'text';
+                this.classList.remove('fa-eye');
+                this.classList.add('fa-eye-slash');
+            } else {
+                input.type = 'password';
+                this.classList.remove('fa-eye-slash');
+                this.classList.add('fa-eye');
+            }
+        }
+    });
+});
+
+// ============================================
+// PASSWORD STRENGTH METER
+// ============================================
+const newPassword = document.getElementById('new_password');
+const confirmPassword = document.getElementById('confirm_password');
+const strengthFill = document.getElementById('strengthFill');
+const strengthText = document.getElementById('strengthText');
+const matchStatus = document.getElementById('matchStatus');
+
+function checkPasswordStrength(password) {
+    let strength = 0;
+    
+    if (password.length >= 6) strength += 1;
+    if (password.length >= 10) strength += 1;
+    if (password.match(/[a-z]+/)) strength += 1;
+    if (password.match(/[A-Z]+/)) strength += 1;
+    if (password.match(/[0-9]+/)) strength += 1;
+    if (password.match(/[$@#&!]+/)) strength += 1;
+    
+    return Math.min(strength, 5);
+}
+
+function updateStrengthMeter() {
+    const password = newPassword.value;
+    const strength = checkPasswordStrength(password);
+    const widthPercent = (strength / 5) * 100;
+    
+    strengthFill.style.width = widthPercent + '%';
+    
+    if (strength === 0) {
+        strengthFill.style.background = '#E5E7EB';
+        strengthText.textContent = 'Enter a password';
+        strengthText.className = 'strength-text';
+    } else if (strength <= 2) {
+        strengthFill.style.background = '#EF4444';
+        strengthText.textContent = 'Weak password';
+        strengthText.className = 'strength-text weak';
+    } else if (strength <= 4) {
+        strengthFill.style.background = '#F59E0B';
+        strengthText.textContent = 'Medium password';
+        strengthText.className = 'strength-text medium';
+    } else {
+        strengthFill.style.background = '#10B981';
+        strengthText.textContent = 'Strong password!';
+        strengthText.className = 'strength-text strong';
+    }
+}
+
+function checkPasswordMatch() {
+    if (confirmPassword.value.length === 0) {
+        matchStatus.innerHTML = '';
+        matchStatus.className = 'match-status';
+        return;
+    }
+    
+    if (newPassword.value === confirmPassword.value) {
+        matchStatus.innerHTML = '<i class="fas fa-check-circle"></i> Passwords match!';
+        matchStatus.className = 'match-status match';
+    } else {
+        matchStatus.innerHTML = '<i class="fas fa-times-circle"></i> Passwords do not match!';
+        matchStatus.className = 'match-status not-match';
+    }
+}
+
+if (newPassword) {
+    newPassword.addEventListener('input', function() {
+        updateStrengthMeter();
+        checkPasswordMatch();
+    });
+}
+
+if (confirmPassword) {
+    confirmPassword.addEventListener('input', checkPasswordMatch);
+}
+
+// ============================================
+// VIEW ORDER ITEMS FUNCTION
+// ============================================
+function viewOrderItems(poId) {
+    const modalBody = document.getElementById('itemsModalBody');
+    modalBody.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i> Loading order details...</div>';
+    document.getElementById('itemsModal').style.display = 'flex';
+    
+    fetch(`../procurement/get_po_details.php?id=${poId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                modalBody.innerHTML = `<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>${data.error}</p></div>`;
+                return;
+            }
+            
+            let itemsHtml = '';
+            data.items.forEach(item => {
+                itemsHtml += `
+                    <tr>
+                        <td><strong>${item.item_name}</strong></td>
+                        <td>${item.quantity} units</td>
+                        <td>TZS ${parseFloat(item.unit_price).toLocaleString()}</td>
+                        <td class="amount">TZS ${parseFloat(item.total_price).toLocaleString()}</td>
+                    </tr>
+                `;
+            });
+            
+            modalBody.innerHTML = `
+                <div class="order-info">
+                    <div class="order-info-grid">
+                        <div>
+                            <div class="info-item">
+                                <span class="info-label">PO Number</span>
+                                <span class="info-value">${data.po.po_number}</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Order Date</span>
+                                <span class="info-value">${data.po.order_date}</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Expected Delivery</span>
+                                <span class="info-value">${data.po.expected_delivery || 'Not specified'}</span>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="info-item">
+                                <span class="info-label">Status</span>
+                                <span class="info-value">
+                                    <span class="status-badge status-${data.po.status}">
+                                        ${data.po.status.toUpperCase()}
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Created By</span>
+                                <span class="info-value">${data.po.created_by_name}</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Approved By</span>
+                                <span class="info-value">${data.po.approved_by_name || 'Pending'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    ${data.po.notes ? `<div class="info-item" style="margin-top: 10px;">
+                        <span class="info-label">Notes</span>
+                        <span class="info-value">${data.po.notes}</span>
+                    </div>` : ''}
+                </div>
+                
+                <h4 style="margin: 20px 0 15px;"><i class="fas fa-list"></i> Items to Supply</h4>
+                <div class="table-responsive">
+                    <table class="items-table">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Quantity</th>
+                                <th>Unit Price</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${itemsHtml}
+                            <tr class="total-row">
+                                <td colspan="3" style="text-align: right;"><strong>Grand Total:</strong></td>
+                                <td><strong>TZS ${parseFloat(data.po.total_amount).toLocaleString()}</strong></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        })
+        .catch(error => {
+            modalBody.innerHTML = `<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Error loading order details</p></div>`;
+        });
+}
+
+// ============================================
+// MARK AS DELIVERED FUNCTION
+// ============================================
+function markAsDelivered(poId) {
+    if (confirm('Are you sure you want to mark this order as DELIVERED?\n\nThis will notify the hotel that the items have been delivered.')) {
+        window.location.href = `?mark_delivered=${poId}&tab=orders`;
+    }
+}
+
+// ============================================
+// CLOSE MODAL FUNCTION
+// ============================================
+function closeItemsModal() {
+    document.getElementById('itemsModal').style.display = 'none';
+}
+
+// Close modal on outside click
+window.onclick = function(event) {
+    const modal = document.getElementById('itemsModal');
+    if (event.target === modal) {
+        closeItemsModal();
+    }
+}
+
+// ============================================
+// PHP SESSION TOAST MESSAGES
+// ============================================
+<?php if(isset($_SESSION['toast_message'])): ?>
+    if (typeof showToast === 'function') {
+        showToast('<?php echo addslashes($_SESSION['toast_message']); ?>', '<?php echo $_SESSION['toast_type'] ?? 'success'; ?>');
+    } else {
+        alert('<?php echo addslashes($_SESSION['toast_message']); ?>');
+    }
+    <?php unset($_SESSION['toast_message']); unset($_SESSION['toast_type']); ?>
+<?php endif; ?>
+</script>
+
+<?php include '../templates/footer.php'; ?>

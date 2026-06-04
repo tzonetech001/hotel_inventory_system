@@ -105,11 +105,11 @@ include '../templates/sidebar.php';
                             </div>
                         </div>
                         
-                        <div class="form-group">
-                            <label><i class="fas fa-hashtag"></i> Reference Number</label>
+                        <!-- <div class="form-group">
+                            <label><i class="fas fa-hashtag"></i> Reference Note </label>
                             <input type="text" name="reference" id="reference" placeholder="e.g., PO-001, GRN-001, Delivery Note #">
                             <small>Optional - for tracking purposes</small>
-                        </div>
+                        </div> -->
                         
                         <div class="form-group">
                             <label><i class="fas fa-sticky-note"></i> Additional Notes</label>

@@ -108,7 +108,7 @@ include '../templates/sidebar.php';
         <div class="card-header">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h3><i class="fas fa-chart-pie"></i> Current Stock Summary</h3>
-                <button onclick="window.print()" class="btn-secondary">
+                <button onclick="window.print()" class="report-tab">
                     <i class="fas fa-print"></i> Print Report
                 </button>
             </div>
