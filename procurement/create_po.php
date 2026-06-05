@@ -15,16 +15,16 @@ $suppliers_sql = "SELECT id, company_name, contact_person, email, phone FROM sup
 $suppliers_result = $db->query($suppliers_sql);
 $suppliers = $suppliers_result->fetch_all(MYSQLI_ASSOC);
 
-// Get low stock items
-$items_sql = "SELECT id, item_name, unit, current_stock, minimum_stock, unit_price 
+// Get low stock items (not filtered by supplier yet)
+$items_sql = "SELECT id, item_name, unit, current_stock, minimum_stock, unit_price, supplier_id 
               FROM inventory_items 
               WHERE status = 'active' AND current_stock <= minimum_stock 
               ORDER BY current_stock ASC";
 $items_result = $db->query($items_sql);
 $low_stock_items = $items_result->fetch_all(MYSQLI_ASSOC);
 
-// Get all active items for manual addition
-$all_items_sql = "SELECT id, item_name, unit, unit_price FROM inventory_items WHERE status = 'active' ORDER BY item_name";
+// Get all active items for manual addition (not filtered yet)
+$all_items_sql = "SELECT id, item_name, unit, unit_price, supplier_id FROM inventory_items WHERE status = 'active' ORDER BY item_name";
 $all_items_result = $db->query($all_items_sql);
 $all_items = $all_items_result->fetch_all(MYSQLI_ASSOC);
 
@@ -57,10 +57,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['create_po'])) {
             foreach ($items as $index => $item_id) {
                 $quantity = intval($quantities[$index]);
                 if ($quantity > 0) {
-                    // Get item price
-                    $price_sql = "SELECT unit_price FROM inventory_items WHERE id = $item_id";
+                    // Get item price and verify it belongs to the selected supplier
+                    $price_sql = "SELECT unit_price, supplier_id FROM inventory_items WHERE id = $item_id";
                     $price_result = $db->query($price_sql);
-                    $price = $price_result->fetch_assoc()['unit_price'] ?? 0;
+                    $item_data = $price_result->fetch_assoc();
+                    
+                    if (!$item_data) {
+                        throw new Exception("Item not found!");
+                    }
+                    
+                    // Check if item belongs to the selected supplier
+                    if ($item_data['supplier_id'] != $supplier_id) {
+                        throw new Exception("Item does not belong to the selected supplier!");
+                    }
+                    
+                    $price = $item_data['unit_price'] ?? 0;
                     $total = $quantity * $price;
                     $total_amount += $total;
                     
@@ -160,38 +171,11 @@ include '../templates/sidebar.php';
                                     <span></span>
                                 </div>
                                 <div id="items-list">
-                                    <?php if(count($low_stock_items) > 0): ?>
-                                        <?php foreach($low_stock_items as $item): ?>
-                                            <div class="item-row">
-                                                <select name="items[]" class="item-select">
-                                                    <option value="<?php echo $item['id']; ?>" selected>
-                                                        <?php echo htmlspecialchars($item['item_name']); ?>
-                                                    </option>
-                                                    <?php foreach($all_items as $all_item): ?>
-                                                        <?php if($all_item['id'] != $item['id']): ?>
-                                                            <option value="<?php echo $all_item['id']; ?>">
-                                                                <?php echo htmlspecialchars($all_item['item_name']); ?>
-                                                            </option>
-                                                        <?php endif; ?>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                                <span class="current-stock"><?php echo $item['current_stock']; ?> <?php echo $item['unit']; ?></span>
-                                                <span class="min-stock"><?php echo $item['minimum_stock']; ?> <?php echo $item['unit']; ?></span>
-                                                <input type="number" name="quantities[]" class="quantity-input" 
-                                                       value="<?php echo max($item['minimum_stock'] * 2, 10); ?>" min="1">
-                                                <button type="button" class="remove-item" onclick="this.closest('.item-row').remove(); updateSummary();">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    <?php else: ?>
-                                        <div class="empty-items">
-                                            <p><i class="fas fa-check-circle"></i> No low stock items found</p>
-                                            <p class="small">Click "Add Item" to manually add items</p>
-                                        </div>
-                                    <?php endif; ?>
+                                    <div class="empty-items" id="emptyItemsMsg">
+                                        <p><i class="fas fa-info-circle"></i> Select a supplier first to see items</p>
+                                    </div>
                                 </div>
-                                <button type="button" class="btn-outline" id="addItemBtn">
+                                <button type="button" class="btn-outline" id="addItemBtn" style="display: none;">
                                     <i class="fas fa-plus"></i> Add Another Item
                                 </button>
                             </div>
@@ -237,6 +221,7 @@ include '../templates/sidebar.php';
                     <ul class="tips-list">
                         <li><i class="fas fa-check-circle"></i> Always select the correct supplier</li>
                         <li><i class="fas fa-check-circle"></i> Set realistic expected delivery dates</li>
+                        <li><i class="fas fa-check-circle"></i> Items will be filtered by selected supplier</li>
                         <li><i class="fas fa-check-circle"></i> Review low stock items automatically added</li>
                         <li><i class="fas fa-check-circle"></i> Add notes for special requirements</li>
                         <li><i class="fas fa-check-circle"></i> PO will be sent to manager for approval</li>
@@ -268,11 +253,7 @@ include '../templates/sidebar.php';
     
     <!-- Items for dropdown (hidden template) -->
     <select id="itemTemplate" style="display: none;">
-        <?php foreach($all_items as $item): ?>
-            <option value="<?php echo $item['id']; ?>">
-                <?php echo htmlspecialchars($item['item_name']); ?>
-            </option>
-        <?php endforeach; ?>
+        <!-- Will be populated dynamically -->
     </select>
 </div>
 
@@ -616,51 +597,137 @@ include '../templates/sidebar.php';
 </style>
 
 <script>
-document.getElementById('addItemBtn').addEventListener('click', function() {
+// Store all items data
+const allItems = <?php echo json_encode($all_items); ?>;
+const lowStockItems = <?php echo json_encode($low_stock_items); ?>;
+
+// When supplier changes, load items for that supplier
+document.getElementById('supplier_id').addEventListener('change', function() {
+    const supplierId = this.value;
     const itemsList = document.getElementById('items-list');
-    const template = document.getElementById('itemTemplate').innerHTML;
+    const addBtn = document.getElementById('addItemBtn');
+    const emptyMsg = document.getElementById('emptyItemsMsg');
     
-    // Remove empty-items message if exists
-    const emptyDiv = itemsList.querySelector('.empty-items');
-    if (emptyDiv) {
-        emptyDiv.remove();
+    if (!supplierId) {
+        itemsList.innerHTML = '<div class="empty-items" id="emptyItemsMsg"><p><i class="fas fa-info-circle"></i> Select a supplier first to see items</p></div>';
+        addBtn.style.display = 'none';
+        updateSummary();
+        return;
     }
     
-    const newRow = document.createElement('div');
-    newRow.className = 'item-row';
-    newRow.innerHTML = `
-        <select name="items[]" class="item-select">
-            ${template}
-        </select>
-        <span class="current-stock">-</span>
-        <span class="min-stock">-</span>
-        <input type="number" name="quantities[]" class="quantity-input" value="10" min="1">
+    // Filter items for this supplier
+    const supplierItems = allItems.filter(item => item.supplier_id == supplierId);
+    const supplierLowStockItems = lowStockItems.filter(item => item.supplier_id == supplierId);
+    
+    if (supplierItems.length === 0) {
+        itemsList.innerHTML = '<div class="empty-items" id="emptyItemsMsg"><p><i class="fas fa-exclamation-triangle"></i> No items found for this supplier</p><p class="small">Please add items to inventory first</p></div>';
+        addBtn.style.display = 'none';
+        updateSummary();
+        return;
+    }
+    
+    // Build options HTML
+    let optionsHtml = '';
+    supplierItems.forEach(item => {
+        optionsHtml += `<option value="${item.id}" data-unit="${item.unit}" data-price="${item.unit_price}" data-supplier="${item.supplier_id}">${escapeHtml(item.item_name)}</option>`;
+    });
+    
+    // Clear items list and add low stock items first
+    itemsList.innerHTML = '';
+    
+    // Add low stock items for this supplier
+    if (supplierLowStockItems.length > 0) {
+        supplierLowStockItems.forEach(item => {
+            const row = createItemRow(item.id, item.item_name, item.unit, item.current_stock, item.minimum_stock, item.unit_price, optionsHtml);
+            itemsList.appendChild(row);
+        });
+    } else {
+        // Add one empty row if no low stock items
+        const row = createItemRow(null, null, null, null, null, null, optionsHtml);
+        itemsList.appendChild(row);
+    }
+    
+    addBtn.style.display = 'block';
+    updateSummary();
+});
+
+// Function to escape HTML
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Function to create item row
+function createItemRow(itemId, itemName, unit, currentStock, minStock, price, optionsHtml) {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+    
+    let selectHtml = `<select name="items[]" class="item-select">`;
+    if (itemId) {
+        selectHtml += `<option value="${itemId}" selected data-unit="${unit}" data-price="${price}">${escapeHtml(itemName)}</option>`;
+        selectHtml += optionsHtml.replace(new RegExp(`value="${itemId}"`, 'g'), `value="${itemId}" selected`);
+    } else {
+        selectHtml += optionsHtml;
+    }
+    selectHtml += `</select>`;
+    
+    row.innerHTML = `
+        ${selectHtml}
+        <span class="current-stock">${currentStock !== null ? currentStock + ' ' + unit : '-'}</span>
+        <span class="min-stock">${minStock !== null ? minStock + ' ' + unit : '-'}</span>
+        <input type="number" name="quantities[]" class="quantity-input" value="${minStock ? Math.max(minStock * 2, 10) : 10}" min="1">
         <button type="button" class="remove-item" onclick="this.closest('.item-row').remove(); updateSummary();">
             <i class="fas fa-trash"></i>
         </button>
     `;
     
-    const select = newRow.querySelector('.item-select');
+    const select = row.querySelector('.item-select');
     select.addEventListener('change', function() {
         loadItemDetails(this);
     });
     
-    itemsList.appendChild(newRow);
-    updateSummary();
-});
+    const qtyInput = row.querySelector('.quantity-input');
+    qtyInput.addEventListener('input', updateSummary);
+    
+    // Load details if item is selected
+    if (itemId) {
+        loadItemDetails(select);
+    }
+    
+    return row;
+}
 
 function loadItemDetails(select) {
+    const selectedOption = select.options[select.selectedIndex];
     const itemId = select.value;
+    
     if (itemId) {
-        fetch(`get_item_details.php?id=${itemId}`)
-            .then(response => response.json())
-            .then(data => {
-                if (!data.error) {
-                    const row = select.closest('.item-row');
-                    row.querySelector('.current-stock').textContent = data.current_stock + ' ' + data.unit;
-                    row.querySelector('.min-stock').textContent = data.minimum_stock + ' ' + data.unit;
-                }
-            });
+        // Get item details from our data
+        const item = allItems.find(i => i.id == itemId);
+        if (item) {
+            const row = select.closest('.item-row');
+            // For current stock, we need to fetch from server or use stored data
+            fetch(`get_item_details.php?id=${itemId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.error) {
+                        row.querySelector('.current-stock').textContent = data.current_stock + ' ' + data.unit;
+                        row.querySelector('.min-stock').textContent = data.minimum_stock + ' ' + data.unit;
+                    } else {
+                        row.querySelector('.current-stock').textContent = '-';
+                        row.querySelector('.min-stock').textContent = '-';
+                    }
+                })
+                .catch(() => {
+                    row.querySelector('.current-stock').textContent = '-';
+                    row.querySelector('.min-stock').textContent = '-';
+                });
+        }
+    } else {
+        const row = select.closest('.item-row');
+        row.querySelector('.current-stock').textContent = '-';
+        row.querySelector('.min-stock').textContent = '-';
     }
 }
 
@@ -678,20 +745,40 @@ function updateSummary() {
     document.getElementById('totalQuantity').textContent = totalQuantity;
 }
 
-// Add event listeners to existing rows
-document.querySelectorAll('.item-select').forEach(select => {
-    select.addEventListener('change', function() {
-        loadItemDetails(this);
+// Add new item button
+document.getElementById('addItemBtn').addEventListener('click', function() {
+    const supplierId = document.getElementById('supplier_id').value;
+    if (!supplierId) {
+        showToast('Please select a supplier first!', 'error');
+        return;
+    }
+    
+    const itemsList = document.getElementById('items-list');
+    const supplierItems = allItems.filter(item => item.supplier_id == supplierId);
+    
+    if (supplierItems.length === 0) {
+        showToast('No items available for this supplier!', 'error');
+        return;
+    }
+    
+    let optionsHtml = '';
+    supplierItems.forEach(item => {
+        optionsHtml += `<option value="${item.id}" data-unit="${item.unit}" data-price="${item.unit_price}">${escapeHtml(item.item_name)}</option>`;
     });
-});
-
-document.querySelectorAll('.quantity-input').forEach(input => {
-    input.addEventListener('input', updateSummary);
+    
+    const row = createItemRow(null, null, null, null, null, null, optionsHtml);
+    itemsList.appendChild(row);
+    updateSummary();
 });
 
 // Reset form
 document.getElementById('resetBtn').addEventListener('click', function() {
     setTimeout(() => {
+        // Trigger supplier change to reload items
+        const supplierSelect = document.getElementById('supplier_id');
+        if (supplierSelect.value) {
+            supplierSelect.dispatchEvent(new Event('change'));
+        }
         updateSummary();
     }, 100);
 });
@@ -706,6 +793,26 @@ form.addEventListener('submit', function() {
 });
 
 updateSummary();
+
+// Function to show toast
+function showToast(message, type) {
+    // Simple toast implementation
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: ${type === 'error' ? '#EF4444' : '#10B981'};
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        z-index: 10000;
+        animation: fadeInUp 0.3s ease;
+    `;
+    toast.innerHTML = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
 </script>
 
 <?php include '../templates/footer.php'; ?>

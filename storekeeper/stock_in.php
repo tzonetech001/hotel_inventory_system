@@ -10,10 +10,23 @@ $user_id = $_SESSION['user_id'];
 $error = '';
 $success_stock = '';
 
-// Get active items
-$items_sql = "SELECT id, item_name, unit, current_stock FROM inventory_items WHERE status = 'active' ORDER BY item_name";
+// Get active items with their supplier info
+$items_sql = "SELECT i.id, i.item_name, i.unit, i.current_stock, i.supplier_id, s.company_name as supplier_name 
+              FROM inventory_items i
+              LEFT JOIN suppliers s ON i.supplier_id = s.id
+              WHERE i.status = 'active' 
+              ORDER BY i.item_name";
 $items_result = $db->query($items_sql);
 $items = $items_result->fetch_all(MYSQLI_ASSOC);
+
+// Get approved POs for reference selection (optional)
+$approved_pos_sql = "SELECT po.id, po.po_number, s.company_name 
+                     FROM purchase_orders po
+                     JOIN suppliers s ON po.supplier_id = s.id
+                     WHERE po.status IN ('approved', 'delivered', 'confirmed')
+                     ORDER BY po.id DESC";
+$approved_pos_result = $db->query($approved_pos_sql);
+$approved_pos = $approved_pos_result->fetch_all(MYSQLI_ASSOC);
 
 // Pre-select item if passed via GET
 $selected_item = isset($_GET['item']) ? intval($_GET['item']) : 0;
@@ -21,30 +34,87 @@ $selected_item = isset($_GET['item']) ? intval($_GET['item']) : 0;
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $item_id = intval($_POST['item_id']);
     $quantity = intval($_POST['quantity']);
-    $reference = trim($_POST['reference']);
+    $po_reference = trim($_POST['po_reference'] ?? '');
     $notes = trim($_POST['notes']);
     
     if ($item_id <= 0 || $quantity <= 0) {
         $error = "Please select an item and enter valid quantity!";
     } else {
-        if (updateStock($item_id, $quantity, 'IN', $user_id, $reference)) {
-            logActivity($user_id, 'Stock IN', "Added $quantity units to item ID: $item_id. Reference: $reference");
-            
-            // Get item name for success message
-            $item_sql = "SELECT item_name FROM inventory_items WHERE id = ?";
-            $item_stmt = $db->prepare($item_sql);
-            $item_stmt->bind_param("i", $item_id);
-            $item_stmt->execute();
-            $item_result = $item_stmt->get_result();
-            $item_data = $item_result->fetch_assoc();
-            
-            $_SESSION['toast_message'] = "Successfully received <strong>" . number_format($quantity) . "</strong> units of <strong>" . htmlspecialchars($item_data['item_name']) . "</strong>";
-            $_SESSION['toast_type'] = "success";
-            
-            header("Location: stock_in.php");
-            exit();
+        // Check if there's an approved PO for this item's supplier (if PO is provided)
+        $supplier_check_sql = "SELECT supplier_id FROM inventory_items WHERE id = ?";
+        $supplier_stmt = $db->prepare($supplier_check_sql);
+        $supplier_stmt->bind_param("i", $item_id);
+        $supplier_stmt->execute();
+        $supplier_result = $supplier_stmt->get_result();
+        $item_data = $supplier_result->fetch_assoc();
+        
+        if (!$item_data) {
+            $error = "Item not found!";
         } else {
-            $error = "Error adding stock!";
+            $supplier_id = $item_data['supplier_id'];
+            $reference = '';
+            $is_valid_po = true;
+            
+            // If PO reference is provided, validate it
+            if (!empty($po_reference)) {
+                // Check if PO exists and is approved for this supplier
+                $po_check_sql = "SELECT id, status FROM purchase_orders 
+                                WHERE po_number = ? AND supplier_id = ? 
+                                AND status IN ('approved', 'delivered', 'confirmed')";
+                $po_stmt = $db->prepare($po_check_sql);
+                $po_stmt->bind_param("si", $po_reference, $supplier_id);
+                $po_stmt->execute();
+                $po_check_result = $po_stmt->get_result();
+                
+                if ($po_check_result->num_rows === 0) {
+                    // Check if PO exists but not approved
+                    $check_sql = "SELECT status FROM purchase_orders 
+                                 WHERE po_number = ? AND supplier_id = ?";
+                    $check_stmt = $db->prepare($check_sql);
+                    $check_stmt->bind_param("si", $po_reference, $supplier_id);
+                    $check_stmt->execute();
+                    $check_result = $check_stmt->get_result();
+                    
+                    if ($check_result->num_rows > 0) {
+                        $po_status = $check_result->fetch_assoc();
+                        $error = "PO $po_reference exists but status is '" . ucfirst($po_status['status']) . "'. Only approved POs can be used!";
+                    } else {
+                        $error = "PO $po_reference not found or does not belong to this item's supplier!";
+                    }
+                    $is_valid_po = false;
+                } else {
+                    $reference = "PO Delivery - $po_reference";
+                }
+            } else {
+                // No PO reference, generate generic reference
+                $reference = "Direct Stock In - " . date('YmdHis');
+            }
+            
+            if ($is_valid_po) {
+                if (updateStock($item_id, $quantity, 'IN', $user_id, $reference)) {
+                    logActivity($user_id, 'Stock IN', "Added $quantity units to item ID: $item_id. Reference: $reference");
+                    
+                    // Get item name for success message
+                    $item_sql = "SELECT item_name FROM inventory_items WHERE id = ?";
+                    $item_stmt = $db->prepare($item_sql);
+                    $item_stmt->bind_param("i", $item_id);
+                    $item_stmt->execute();
+                    $item_result = $item_stmt->get_result();
+                    $item_data_name = $item_result->fetch_assoc();
+                    
+                    if (!empty($po_reference)) {
+                        $_SESSION['toast_message'] = "Successfully received <strong>" . number_format($quantity) . "</strong> units of <strong>" . htmlspecialchars($item_data_name['item_name']) . "</strong> with PO: $po_reference";
+                    } else {
+                        $_SESSION['toast_message'] = "Successfully received <strong>" . number_format($quantity) . "</strong> units of <strong>" . htmlspecialchars($item_data_name['item_name']) . "</strong>";
+                    }
+                    $_SESSION['toast_type'] = "success";
+                    
+                    header("Location: stock_in.php");
+                    exit();
+                } else {
+                    $error = "Error adding stock!";
+                }
+            }
         }
     }
 }
@@ -82,12 +152,25 @@ include '../templates/sidebar.php';
                                     <option value="<?php echo $item['id']; ?>" 
                                             data-current="<?php echo $item['current_stock']; ?>"
                                             data-unit="<?php echo $item['unit']; ?>"
+                                            data-supplier="<?php echo $item['supplier_id']; ?>"
+                                            data-supplier-name="<?php echo htmlspecialchars($item['supplier_name'] ?? 'No Supplier'); ?>"
                                             <?php echo ($selected_item == $item['id']) ? 'selected' : ''; ?>>
                                         <?php echo htmlspecialchars($item['item_name']); ?> 
                                         (Current: <?php echo $item['current_stock']; ?> <?php echo $item['unit']; ?>)
+                                        <?php if($item['supplier_name']): ?>
+                                            - Supplier: <?php echo htmlspecialchars($item['supplier_name']); ?>
+                                        <?php else: ?>
+                                            - No Supplier Assigned!
+                                        <?php endif; ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label><i class="fas fa-file-invoice"></i> Purchase Order Number</label>
+                            <input type="text" name="po_reference" id="po_reference" placeholder="Enter PO Number (Optional)" autocomplete="off">
+                            <small>Enter PO number if this stock is from a purchase order</small>
                         </div>
                         
                         <div class="form-row">
@@ -105,12 +188,6 @@ include '../templates/sidebar.php';
                             </div>
                         </div>
                         
-                        <!-- <div class="form-group">
-                            <label><i class="fas fa-hashtag"></i> Reference Note </label>
-                            <input type="text" name="reference" id="reference" placeholder="e.g., PO-001, GRN-001, Delivery Note #">
-                            <small>Optional - for tracking purposes</small>
-                        </div> -->
-                        
                         <div class="form-group">
                             <label><i class="fas fa-sticky-note"></i> Additional Notes</label>
                             <textarea name="notes" id="notes" rows="3" placeholder="Any additional information about this receipt..."></textarea>
@@ -119,10 +196,11 @@ include '../templates/sidebar.php';
                         <div class="info-box">
                             <i class="fas fa-info-circle"></i>
                             <div class="info-content">
-                                Recording stock in will increase the current inventory level.
-                                Make sure to verify the quantity and quality before confirming.
+                                <strong>Note:</strong> PO number is optional. If you enter a PO number, it will be validated to ensure it's approved and matches the item's supplier.
                             </div>
                         </div>
+                        
+                        <div id="poValidationMsg" class="validation-msg" style="display: none;"></div>
                         
                         <div class="form-actions">
                             <button type="submit" class="btn-primary" id="submitBtn">
@@ -139,7 +217,20 @@ include '../templates/sidebar.php';
         
         <!-- Right Column: Tips & Recent -->
         <div class="info-column">
-           
+            <div class="card tips-card animate-card-delayed">
+                <div class="card-header">
+                    <h3><i class="fas fa-lightbulb"></i> Important Rules</h3>
+                </div>
+                <div class="card-body">
+                    <ul class="tips-list">
+                        <li><i class="fas fa-check-circle"></i> PO number is <strong>optional</strong></li>
+                        <li><i class="fas fa-check-circle"></i> If PO is entered, it must be approved</li>
+                        <li><i class="fas fa-check-circle"></i> Item's supplier must match PO's supplier</li>
+                        <li><i class="fas fa-check-circle"></i> Verify quantity before recording</li>
+                        <li><i class="fas fa-check-circle"></i> All stock receipts are tracked</li>
+                    </ul>
+                </div>
+            </div>
             
             <div class="card recent-card animate-card-delayed">
                 <div class="card-header">
@@ -165,6 +256,7 @@ include '../templates/sidebar.php';
                                         <div class="recent-item-name"><?php echo htmlspecialchars($movement['item_name']); ?></div>
                                         <div class="recent-meta">
                                             +<?php echo number_format($movement['quantity']); ?> units • 
+                                            Ref: <?php echo htmlspecialchars($movement['reference_no'] ?? 'N/A'); ?> •
                                             <?php echo date('d/m H:i', strtotime($movement['created_at'])); ?>
                                         </div>
                                     </div>
@@ -184,14 +276,12 @@ include '../templates/sidebar.php';
 </div>
 
 <style>
-    /* Two Column Layout */
     .two-column-layout {
         display: grid;
         grid-template-columns: 1fr 360px;
         gap: 25px;
     }
     
-    /* Animations */
     .animate-card {
         animation: fadeInUp 0.4s ease;
     }
@@ -211,7 +301,6 @@ include '../templates/sidebar.php';
         }
     }
     
-    /* Card Styles */
     .card {
         background: white;
         border-radius: 16px;
@@ -241,7 +330,6 @@ include '../templates/sidebar.php';
         padding: 24px;
     }
     
-    /* Form Styles */
     .form-group {
         margin-bottom: 20px;
     }
@@ -296,7 +384,6 @@ include '../templates/sidebar.php';
         gap: 15px;
     }
     
-    /* New Stock Display */
     .new-stock-display {
         background: #F3F4F6;
         padding: 12px 15px;
@@ -316,7 +403,6 @@ include '../templates/sidebar.php';
         color: #6B7280;
     }
     
-    /* Info Box */
     .info-box {
         background: #DBEAFE;
         border-left: 4px solid #1E3A8A;
@@ -339,7 +425,25 @@ include '../templates/sidebar.php';
         line-height: 1.5;
     }
     
-    /* Form Actions */
+    .validation-msg {
+        padding: 12px;
+        border-radius: 10px;
+        margin: 15px 0;
+        font-size: 13px;
+    }
+    
+    .validation-msg.valid {
+        background: #D1FAE5;
+        color: #065F46;
+        border-left: 4px solid #10B981;
+    }
+    
+    .validation-msg.invalid {
+        background: #FEE2E2;
+        color: #991B1B;
+        border-left: 4px solid #EF4444;
+    }
+    
     .form-actions {
         display: flex;
         gap: 12px;
@@ -389,7 +493,6 @@ include '../templates/sidebar.php';
         background: #E5E7EB;
     }
     
-    /* Tips List */
     .tips-list {
         list-style: none;
         padding: 0;
@@ -416,7 +519,6 @@ include '../templates/sidebar.php';
         width: 20px;
     }
     
-    /* Recent List */
     .recent-list {
         max-height: 300px;
         overflow-y: auto;
@@ -477,7 +579,6 @@ include '../templates/sidebar.php';
         color: #6B7280;
     }
     
-    /* Responsive */
     @media (max-width: 900px) {
         .two-column-layout {
             grid-template-columns: 1fr;
@@ -503,10 +604,15 @@ include '../templates/sidebar.php';
 <script>
     const itemSelect = document.getElementById('item_id');
     const quantityInput = document.getElementById('quantity');
+    const poReference = document.getElementById('po_reference');
     const newStockValue = document.getElementById('newStockValue');
     const newStockUnit = document.getElementById('newStockUnit');
     const submitBtn = document.getElementById('submitBtn');
     const resetBtn = document.getElementById('resetBtn');
+    const poValidationMsg = document.getElementById('poValidationMsg');
+    
+    // Store approved POs data from PHP
+    const approvedPOs = <?php echo json_encode($approved_pos); ?>;
     
     function calculateNewStock() {
         const selectedOption = itemSelect.options[itemSelect.selectedIndex];
@@ -525,15 +631,74 @@ include '../templates/sidebar.php';
         }
     }
     
-    itemSelect.addEventListener('change', calculateNewStock);
+    function validatePO() {
+        const poNumber = poReference.value.trim();
+        const selectedOption = itemSelect.options[itemSelect.selectedIndex];
+        
+        // If no PO number, hide validation message
+        if (!poNumber) {
+            poValidationMsg.style.display = 'none';
+            return true;
+        }
+        
+        // If no item selected, show message
+        if (!selectedOption.value) {
+            poValidationMsg.style.display = 'block';
+            poValidationMsg.className = 'validation-msg invalid';
+            poValidationMsg.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Please select an item first`;
+            return false;
+        }
+        
+        const itemId = selectedOption.value;
+        
+        // Show loading state
+        poValidationMsg.style.display = 'block';
+        poValidationMsg.className = 'validation-msg';
+        poValidationMsg.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Validating PO...`;
+        
+        // Validate via AJAX
+        fetch(`check_po_supplier.php?po=${encodeURIComponent(poNumber)}&item_id=${itemId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.valid) {
+                    poValidationMsg.className = 'validation-msg valid';
+                    poValidationMsg.innerHTML = `<i class="fas fa-check-circle"></i> ${data.message}`;
+                } else {
+                    poValidationMsg.className = 'validation-msg invalid';
+                    poValidationMsg.innerHTML = `<i class="fas fa-times-circle"></i> ${data.message}`;
+                }
+            })
+            .catch(() => {
+                poValidationMsg.className = 'validation-msg invalid';
+                poValidationMsg.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Error validating PO number`;
+            });
+        
+        return true;
+    }
+    
+    // Debounce function for PO validation
+    let poValidationTimeout;
+    poReference.addEventListener('input', function() {
+        clearTimeout(poValidationTimeout);
+        poValidationTimeout = setTimeout(validatePO, 500);
+    });
+    
+    itemSelect.addEventListener('change', function() {
+        calculateNewStock();
+        if (poReference.value.trim()) {
+            validatePO();
+        }
+    });
+    
     quantityInput.addEventListener('input', calculateNewStock);
     
-    // Form submit loading state
+    // Form submit validation
     const form = document.getElementById('stockInForm');
     
     form.addEventListener('submit', function(e) {
         const itemId = itemSelect.value;
         const quantity = quantityInput.value;
+        const poNumber = poReference.value.trim();
         
         if (!itemId) {
             e.preventDefault();
@@ -547,13 +712,34 @@ include '../templates/sidebar.php';
             return;
         }
         
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Recording...';
-        submitBtn.disabled = true;
+        // If PO is provided, validate it before submit
+        if (poNumber) {
+            e.preventDefault();
+            
+            fetch(`check_po_supplier.php?po=${encodeURIComponent(poNumber)}&item_id=${itemId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.valid) {
+                        // Proceed with form submission
+                        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Recording...';
+                        submitBtn.disabled = true;
+                        form.submit();
+                    } else {
+                        showToast(data.message, 'error');
+                    }
+                })
+                .catch(() => {
+                    showToast('Error validating PO number', 'error');
+                });
+        }
+        // If no PO, submit directly
     });
     
     resetBtn.addEventListener('click', function() {
         setTimeout(() => {
             calculateNewStock();
+            poValidationMsg.style.display = 'none';
+            poReference.value = '';
         }, 100);
     });
     
