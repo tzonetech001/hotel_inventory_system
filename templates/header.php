@@ -475,6 +475,27 @@
                 transform: translateX(0);
             }
         }
+        
+        /* Loading Spinner for Refresh */
+        .header-refresh-spinner {
+            display: none;
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: #1E3A8A;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 1002;
+        }
+        
+        .header-refresh-spinner.active {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
     </style>
 </head>
 <body>
@@ -483,6 +504,11 @@
     
     <!-- Menu Overlay for Mobile -->
     <div class="menu-overlay" id="menuOverlay" onclick="closeMenu()"></div>
+    
+    <!-- Refresh Spinner -->
+    <div class="header-refresh-spinner" id="refreshSpinner">
+        <i class="fas fa-spinner fa-spin"></i> Updating...
+    </div>
     
     <!-- Top Header -->
     <div class="top-header">
@@ -505,39 +531,65 @@
             <div class="user-info" id="userInfoBtn">
                 <div class="user-avatar-circle" id="userAvatar">
                     <?php
-                    // Get user profile picture
+                    // Get user profile picture from database dynamically
+                    $user_id = $_SESSION['user_id'] ?? 0;
                     $profile_pic = '';
-                    if (isset($_SESSION['user_id'])) {
-                        global $db;
-                        $pic_sql = "SELECT profile_picture FROM users WHERE id = ?";
+                    $fullname = $_SESSION['fullname'] ?? 'User';
+                    
+                    if ($user_id > 0 && isset($db)) {
+                        $pic_sql = "SELECT profile_picture, fullname FROM users WHERE id = ?";
                         $pic_stmt = $db->prepare($pic_sql);
-                        $pic_stmt->bind_param("i", $_SESSION['user_id']);
+                        $pic_stmt->bind_param("i", $user_id);
                         $pic_stmt->execute();
                         $pic_result = $pic_stmt->get_result();
                         if ($pic_row = $pic_result->fetch_assoc()) {
                             $profile_pic = $pic_row['profile_picture'];
+                            $fullname = $pic_row['fullname'];
+                            // Update session fullname
+                            $_SESSION['fullname'] = $fullname;
                         }
                     }
                     
-                    if ($profile_pic && file_exists('../uploads/profile/' . $profile_pic)):
+                    // Get the correct path for profile pictures
+                    $profile_pic_path = '';
+                    if (!empty($profile_pic)) {
+                        // Check multiple possible paths
+                        $doc_root = $_SERVER['DOCUMENT_ROOT'];
+                        $possible_paths = [
+                            $doc_root . '/hotel_inventory/uploads/profile_pictures/' . $profile_pic,
+                            $doc_root . '/uploads/profile_pictures/' . $profile_pic,
+                            dirname(__DIR__) . '/uploads/profile_pictures/' . $profile_pic,
+                            __DIR__ . '/../uploads/profile_pictures/' . $profile_pic
+                        ];
+                        
+                        foreach ($possible_paths as $path) {
+                            if (file_exists($path)) {
+                                $profile_pic_path = APP_URL . '/uploads/profile_pictures/' . $profile_pic;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if ($profile_pic_path && !empty($profile_pic)):
                     ?>
-                        <img src="<?php echo APP_URL; ?>/uploads/profile/<?php echo $profile_pic; ?>" alt="Profile">
+                        <img src="<?php echo $profile_pic_path; ?>?t=<?php echo time(); ?>" alt="Profile" id="headerProfileImg">
                     <?php else:
-                        // Get first letter of first name and last name
-                        $fullname = $_SESSION['fullname'] ?? 'User';
+                        // Get initials from fullname
                         $name_parts = explode(' ', $fullname);
                         $initial = strtoupper(substr($name_parts[0], 0, 1));
                         if (isset($name_parts[1])) {
                             $initial .= strtoupper(substr($name_parts[1], 0, 1));
-                        } else {
+                        } else if (strlen($name_parts[0]) > 1) {
                             $initial .= strtoupper(substr($name_parts[0], 1, 1));
+                        } else {
+                            $initial .= strtoupper(substr($fullname, 0, 1));
                         }
                     ?>
-                        <?php echo $initial; ?>
+                        <span id="headerInitials"><?php echo $initial; ?></span>
                     <?php endif; ?>
                 </div>
                 <div class="user-details">
-                    <span class="user-name"><?php echo htmlspecialchars($_SESSION['fullname'] ?? 'User'); ?></span>
+                    <span class="user-name" id="headerUserName"><?php echo htmlspecialchars($fullname); ?></span>
                     <span class="user-role"><?php echo $_SESSION['role'] ?? 'Guest'; ?></span>
                 </div>
                 <i class="fas fa-chevron-down" style="font-size: 12px;"></i>
@@ -546,24 +598,25 @@
             <!-- Dropdown Menu -->
             <div class="user-dropdown" id="userDropdown">
                 <div class="dropdown-header">
-                    <div class="dropdown-avatar">
-                        <?php if ($profile_pic && file_exists('../uploads/profile/' . $profile_pic)): ?>
-                            <img src="<?php echo APP_URL; ?>/uploads/profile/<?php echo $profile_pic; ?>" alt="Profile">
+                    <div class="dropdown-avatar" id="dropdownAvatar">
+                        <?php if ($profile_pic_path && !empty($profile_pic)): ?>
+                            <img src="<?php echo $profile_pic_path; ?>?t=<?php echo time(); ?>" alt="Profile" id="dropdownProfileImg">
                         <?php else: ?>
                             <?php
-                            $fullname = $_SESSION['fullname'] ?? 'User';
                             $name_parts = explode(' ', $fullname);
                             $initial = strtoupper(substr($name_parts[0], 0, 1));
                             if (isset($name_parts[1])) {
                                 $initial .= strtoupper(substr($name_parts[1], 0, 1));
+                            } else {
+                                $initial .= strtoupper(substr($fullname, 0, 1));
                             }
                             echo $initial;
                             ?>
                         <?php endif; ?>
                     </div>
                     <div class="dropdown-info">
-                        <h4><?php echo htmlspecialchars($_SESSION['fullname'] ?? 'User'); ?></h4>
-                        <p><?php echo $_SESSION['role'] ?? 'Guest'; ?> • <?php echo $_SESSION['username'] ?? ''; ?></p>
+                        <h4 id="dropdownUserName"><?php echo htmlspecialchars($fullname); ?></h4>
+                        <p><?php echo $_SESSION['role'] ?? 'Guest'; ?> • <?php echo htmlspecialchars($_SESSION['username'] ?? ''); ?></p>
                     </div>
                 </div>
                 <ul class="dropdown-menu">
@@ -582,7 +635,7 @@
                                 break;
                         }
                         ?>
-                        <a href="<?php echo $profile_link; ?>">
+                        <a href="<?php echo $profile_link; ?>" id="profileLink">
                             <i class="fas fa-user-circle"></i> My Profile
                         </a>
                     </li>
@@ -683,6 +736,57 @@
         }
         
         // ============================================
+        // REFRESH HEADER DATA FUNCTION
+        // ============================================
+        function refreshHeaderData() {
+            const spinner = document.getElementById('refreshSpinner');
+            if (spinner) {
+                spinner.classList.add('active');
+            }
+            
+            fetch('<?php echo APP_URL; ?>/ajax/get_user_info.php')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Update header user name
+                        const headerUserName = document.getElementById('headerUserName');
+                        if (headerUserName) headerUserName.textContent = data.fullname;
+                        
+                        // Update dropdown user name
+                        const dropdownUserName = document.getElementById('dropdownUserName');
+                        if (dropdownUserName) dropdownUserName.textContent = data.fullname;
+                        
+                        // Update avatar
+                        const userAvatar = document.getElementById('userAvatar');
+                        const dropdownAvatar = document.getElementById('dropdownAvatar');
+                        
+                        if (data.profile_picture_url) {
+                            const timestamp = '?t=' + new Date().getTime();
+                            const imgHtml = `<img src="${data.profile_picture_url}${timestamp}" alt="Profile">`;
+                            const imgHtml2 = `<img src="${data.profile_picture_url}${timestamp}" alt="Profile">`;
+                            
+                            if (userAvatar) userAvatar.innerHTML = imgHtml;
+                            if (dropdownAvatar) dropdownAvatar.innerHTML = imgHtml2;
+                        } else if (data.initials) {
+                            if (userAvatar) userAvatar.innerHTML = `<span>${data.initials}</span>`;
+                            if (dropdownAvatar) dropdownAvatar.innerHTML = data.initials;
+                        }
+                    }
+                })
+                .catch(error => console.error('Error refreshing header:', error))
+                .finally(() => {
+                    if (spinner) {
+                        setTimeout(() => {
+                            spinner.classList.remove('active');
+                        }, 500);
+                    }
+                });
+        }
+        
+        // Auto refresh header every 30 seconds to check for updates
+        setInterval(refreshHeaderData, 30000);
+        
+        // ============================================
         // SHOW PHP SESSION MESSAGES AS TOASTS
         // ============================================
         <?php if(isset($_SESSION['toast_message'])): ?>
@@ -699,6 +803,30 @@
                 setTimeout(() => alert.remove(), 500);
             }, 5000);
         });
+        
+        // ============================================
+        // PROFILE PAGE DETECTION FOR REFRESH
+        // ============================================
+        // If we're on profile page, refresh header when profile updates
+        const currentPage = window.location.pathname;
+        if (currentPage.includes('profile.php')) {
+            // Listen for storage events (when profile updates in another tab)
+            window.addEventListener('storage', function(e) {
+                if (e.key === 'profile_updated') {
+                    refreshHeaderData();
+                }
+            });
+            
+            // Also check every 5 seconds when on profile page
+            let profileCheckInterval = setInterval(() => {
+                refreshHeaderData();
+            }, 5000);
+            
+            // Clear interval when leaving page
+            window.addEventListener('beforeunload', function() {
+                clearInterval(profileCheckInterval);
+            });
+        }
     </script>
     
     <style>
