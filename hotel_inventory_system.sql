@@ -798,3 +798,111 @@ CREATE INDEX idx_stock_requests_status ON stock_requests(status);
 CREATE INDEX idx_stock_requests_request_code ON stock_requests(request_code);
 CREATE INDEX idx_stock_requests_created ON stock_requests(created_at);
 CREATE INDEX idx_department_users_email ON department_users(email);
+
+-- =====================================================
+-- NEW TABLES FOR DEPARTMENT SYSTEM
+-- =====================================================
+
+-- 1. Departments table
+CREATE TABLE `departments` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `department_name` varchar(100) NOT NULL,
+  `department_code` varchar(20) NOT NULL,
+  `description` text DEFAULT NULL,
+  `status` enum('active','inactive') DEFAULT 'active',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `department_code` (`department_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Insert default departments
+INSERT INTO `departments` (`department_name`, `department_code`, `description`) VALUES
+('Restaurant', 'REST', 'Food and beverage service department'),
+('Bar', 'BAR', 'Drinks and beverages service'),
+('Housekeeping', 'HK', 'Room cleaning and maintenance'),
+('Kitchen', 'KITCH', 'Food preparation department'),
+('Laundry', 'LAUND', 'Linen and clothing cleaning'),
+('Maintenance', 'MAINT', 'Equipment and facility maintenance'),
+('Front Office', 'FO', 'Guest reception and check-in/out'),
+('Other', 'OTHER', 'Other departments');
+
+-- 2. Department users table (staff who can confirm requests)
+CREATE TABLE `department_users` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `department_id` int(11) NOT NULL,
+  `fullname` varchar(100) NOT NULL,
+  `sex` enum('Male','Female','Other') DEFAULT NULL,
+  `email` varchar(100) NOT NULL,
+  `phone` varchar(20) NOT NULL,
+  `password` varchar(255) NOT NULL,
+  `employee_id` varchar(50) DEFAULT NULL,
+  `position` varchar(100) DEFAULT NULL,
+  `status` enum('active','inactive') DEFAULT 'active',
+  `profile_picture` varchar(255) DEFAULT NULL,
+  `last_login` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `email` (`email`),
+  UNIQUE KEY `employee_id` (`employee_id`),
+  KEY `department_id` (`department_id`),
+  CONSTRAINT `department_users_ibfk_1` FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 3. Stock requests table (with QR code)
+CREATE TABLE `stock_requests` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `request_code` varchar(50) NOT NULL,
+  `item_id` int(11) NOT NULL,
+  `quantity` int(11) NOT NULL,
+  `department_id` int(11) NOT NULL,
+  `requested_by` int(11) NOT NULL COMMENT 'storekeeper who created request',
+  `department_user_id` int(11) DEFAULT NULL COMMENT 'department staff who confirmed',
+  `status` enum('pending','confirmed','cancelled','rejected') DEFAULT 'pending',
+  `qr_code` text NOT NULL,
+  `request_date` datetime NOT NULL,
+  `confirmed_at` datetime DEFAULT NULL,
+  `rejection_reason` text DEFAULT NULL,
+  `notes` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `request_code` (`request_code`),
+  KEY `item_id` (`item_id`),
+  KEY `department_id` (`department_id`),
+  KEY `requested_by` (`requested_by`),
+  KEY `department_user_id` (`department_user_id`),
+  CONSTRAINT `stock_requests_ibfk_1` FOREIGN KEY (`item_id`) REFERENCES `inventory_items` (`id`),
+  CONSTRAINT `stock_requests_ibfk_2` FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`),
+  CONSTRAINT `stock_requests_ibfk_3` FOREIGN KEY (`requested_by`) REFERENCES `users` (`id`),
+  CONSTRAINT `stock_requests_ibfk_4` FOREIGN KEY (`department_user_id`) REFERENCES `department_users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 4. Stock out confirmations (final record after QR confirmation)
+-- This replaces direct stock movement OUT entries
+CREATE TABLE `stock_out_confirmations` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `request_id` int(11) NOT NULL,
+  `confirmed_by` int(11) NOT NULL COMMENT 'department user id',
+  `confirmation_method` enum('qr_scan','manual') DEFAULT 'qr_scan',
+  `confirmed_at` datetime NOT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `device_info` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `request_id` (`request_id`),
+  KEY `confirmed_by` (`confirmed_by`),
+  CONSTRAINT `stock_out_confirmations_ibfk_1` FOREIGN KEY (`request_id`) REFERENCES `stock_requests` (`id`),
+  CONSTRAINT `stock_out_confirmations_ibfk_2` FOREIGN KEY (`confirmed_by`) REFERENCES `department_users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 5. Add department_id to inventory_items (optional, for default department)
+ALTER TABLE `inventory_items` 
+ADD COLUMN `default_department_id` int(11) NULL AFTER `location`,
+ADD KEY `default_department_id` (`default_department_id`),
+ADD CONSTRAINT `inventory_items_ibfk_department` FOREIGN KEY (`default_department_id`) REFERENCES `departments` (`id`);
+
+-- 6. Create indexes for performance
+CREATE INDEX idx_stock_requests_status ON stock_requests(status);
+CREATE INDEX idx_stock_requests_request_code ON stock_requests(request_code);
+CREATE INDEX idx_stock_requests_created ON stock_requests(created_at);
+CREATE INDEX idx_department_users_email ON department_users(email);
