@@ -50,6 +50,9 @@
                 <li class="<?php echo ($current_page == 'approve_po.php') ? 'active' : ''; ?>">
                     <a href="<?php echo APP_URL; ?>/manager/approve_po.php"><i class="fas fa-check-circle"></i> <span>Approve Orders</span></a>
                 </li>
+                <li class="<?php echo ($current_page == 'view_po.php') ? 'active' : ''; ?>">
+                    <a href="<?php echo APP_URL; ?>/procurement/view_po.php"><i class="fas fa-list"></i> <span>View PO</span></a>
+                </li>
                 <li class="<?php echo ($current_page == 'suppliers.php') ? 'active' : ''; ?>">
                     <a href="<?php echo APP_URL; ?>/manager/suppliers.php"><i class="fas fa-truck"></i> <span>Suppliers</span></a>
                 </li>
