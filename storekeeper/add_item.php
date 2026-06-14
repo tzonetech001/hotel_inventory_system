@@ -15,6 +15,9 @@ $suppliers_sql = "SELECT id, company_name FROM suppliers WHERE status = 'active'
 $suppliers_result = $db->query($suppliers_sql);
 $suppliers = $suppliers_result->fetch_all(MYSQLI_ASSOC);
 
+// Get departments for dropdown
+$departments = ['Kitchen', 'Housekeeping', 'Laundry', 'Front Office', 'Maintenance', 'Restaurant', 'Bar', 'Store'];
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $item_name = trim($_POST['item_name']);
     $category = trim($_POST['category']);
@@ -25,14 +28,36 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $unit_price = floatval($_POST['unit_price']);
     $supplier_id = intval($_POST['supplier_id']);
     $location = trim($_POST['location']);
+    $department = trim($_POST['department']);
     
     if (empty($item_name)) {
         $error = "Item name is required!";
     } else {
-        $sql = "INSERT INTO inventory_items (item_name, category, unit, current_stock, minimum_stock, maximum_stock, unit_price, supplier_id, location) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        // FIXED: Type definition string must have 10 characters for 10 variables
+        // s = string, i = integer, d = double/decimal
+        // Format: sssiiidis (3 strings, 3 integers, 1 double, 1 integer, 1 string) = 9? Let me fix
+        // Actually: item_name(s), category(s), unit(s), current_stock(i), minimum_stock(i), 
+        // maximum_stock(i), unit_price(d), supplier_id(i), location(s), department(s)
+        // That's: sssiiidis s (10 characters: s,s,s,i,i,i,d,i,s,s)
+        
+        $sql = "INSERT INTO inventory_items (item_name, category, unit, current_stock, minimum_stock, maximum_stock, unit_price, supplier_id, location, department) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $db->prepare($sql);
-        $stmt->bind_param("sssiiidis", $item_name, $category, $unit, $current_stock, $minimum_stock, $maximum_stock, $unit_price, $supplier_id, $location);
+        
+        // FIXED: Type string must have exactly 10 characters for 10 variables
+        // sssiiidiss = string, string, string, int, int, int, double, int, string, string
+        $stmt->bind_param("sssiiidiss", 
+            $item_name,      // s
+            $category,       // s
+            $unit,           // s
+            $current_stock,  // i
+            $minimum_stock,  // i
+            $maximum_stock,  // i
+            $unit_price,     // d (double/decimal)
+            $supplier_id,    // i
+            $location,       // s
+            $department      // s
+        );
         
         if ($stmt->execute()) {
             $item_id = $db->insert_id;
@@ -42,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 updateStock($item_id, $current_stock, 'IN', $user_id, 'Initial stock');
             }
             
-            logActivity($user_id, 'Add Item', "Added new item: $item_name");
+            logActivity($user_id, 'Add Item', "Added new item: $item_name (Department: $department)");
             
             $_SESSION['toast_message'] = "Item <strong>" . htmlspecialchars($item_name) . "</strong> added successfully!";
             $_SESSION['toast_type'] = "success";
@@ -62,11 +87,13 @@ include '../templates/sidebar.php';
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-plus-circle"></i> Add New Item</h1>
-        <p>Add new product to inventory</p>
+        <p>Add new product to inventory with department assignment</p>
     </div>
     
     <?php if($error): ?>
-        <script>showToast('<?php echo addslashes($error); ?>', 'error');</script>
+        <div class="alert alert-error">
+            <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
+        </div>
     <?php endif; ?>
     
     <!-- Two Column Layout -->
@@ -114,8 +141,16 @@ include '../templates/sidebar.php';
                         
                         <div class="form-row">
                             <div class="form-group">
-                                <label><i class="fas fa-dollar-sign"></i> Unit Price (TZS)</label>
-                                <input type="number" step="0.01" name="unit_price" id="unit_price" value="<?php echo htmlspecialchars($_POST['unit_price'] ?? ''); ?>" placeholder="0.00">
+                                <label><i class="fas fa-building"></i> Department <span class="required">*</span></label>
+                                <select name="department" id="department" required>
+                                    <option value="">Select Department</option>
+                                    <?php foreach($departments as $dept): ?>
+                                        <option value="<?php echo $dept; ?>" <?php echo (($_POST['department'] ?? '') == $dept) ? 'selected' : ''; ?>>
+                                            <?php echo $dept; ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <small>This item will be primarily used by this department</small>
                             </div>
                             
                             <div class="form-group">
@@ -126,8 +161,8 @@ include '../templates/sidebar.php';
                         
                         <div class="form-row">
                             <div class="form-group">
-                                <label><i class="fas fa-boxes"></i> Initial Stock</label>
-                                <input type="number" name="current_stock" id="current_stock" value="<?php echo htmlspecialchars($_POST['current_stock'] ?? '0'); ?>" min="0">
+                                <label><i class="fas fa-dollar-sign"></i> Unit Price (TZS)</label>
+                                <input type="number" step="0.01" name="unit_price" id="unit_price" value="<?php echo htmlspecialchars($_POST['unit_price'] ?? ''); ?>" placeholder="0.00">
                             </div>
                             
                             <div class="form-group">
@@ -145,9 +180,8 @@ include '../templates/sidebar.php';
                         
                         <div class="form-row">
                             <div class="form-group">
-                                <label><i class="fas fa-exclamation-triangle"></i> Minimum Stock (Alert Level)</label>
-                                <input type="number" name="minimum_stock" id="minimum_stock" value="<?php echo htmlspecialchars($_POST['minimum_stock'] ?? '10'); ?>" min="0">
-                                <small>Stock below this level will trigger alert</small>
+                                <label><i class="fas fa-boxes"></i> Initial Stock</label>
+                                <input type="number" name="current_stock" id="current_stock" value="<?php echo htmlspecialchars($_POST['current_stock'] ?? '0'); ?>" min="0">
                             </div>
                             
                             <div class="form-group">
@@ -156,11 +190,19 @@ include '../templates/sidebar.php';
                             </div>
                         </div>
                         
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label><i class="fas fa-exclamation-triangle"></i> Minimum Stock (Alert Level)</label>
+                                <input type="number" name="minimum_stock" id="minimum_stock" value="<?php echo htmlspecialchars($_POST['minimum_stock'] ?? '10'); ?>" min="0">
+                                <small>Stock below this level will trigger alert</small>
+                            </div>
+                        </div>
+                        
                         <div class="info-box">
                             <i class="fas fa-info-circle"></i>
                             <div class="info-content">
                                 <strong>Note:</strong> Items with stock below minimum level will trigger alerts. 
-                                You can always update stock later using <strong>Stock In</strong> or <strong>Stock Out</strong>.
+                                The department assigned will be used for automatic stock out requests.
                             </div>
                         </div>
                         
@@ -189,11 +231,26 @@ include '../templates/sidebar.php';
                 <div class="card-body">
                     <ul class="tips-list">
                         <li><i class="fas fa-check-circle"></i> Use clear and descriptive item names</li>
+                        <li><i class="fas fa-check-circle"></i> Select the correct department for automatic tracking</li>
                         <li><i class="fas fa-check-circle"></i> Set appropriate minimum stock levels for reorder alerts</li>
                         <li><i class="fas fa-check-circle"></i> Assign suppliers to track purchase history</li>
                         <li><i class="fas fa-check-circle"></i> Storage location helps with physical inventory counting</li>
-                        <li><i class="fas fa-check-circle"></i> You can update stock later via Stock In/Out</li>
                     </ul>
+                </div>
+            </div>
+            
+            <div class="card departments-card animate-card-delayed">
+                <div class="card-header">
+                    <h3><i class="fas fa-building"></i> Hotel Departments</h3>
+                </div>
+                <div class="card-body">
+                    <div class="department-badges">
+                        <?php foreach($departments as $dept): ?>
+                            <span class="department-badge" data-dept="<?php echo $dept; ?>">
+                                <i class="fas <?php echo getDepartmentIcon($dept); ?>"></i> <?php echo $dept; ?>
+                            </span>
+                        <?php endforeach; ?>
+                    </div>
                 </div>
             </div>
             
@@ -277,6 +334,22 @@ include '../templates/sidebar.php';
     
     .card-body {
         padding: 24px;
+    }
+    
+    /* Alert */
+    .alert {
+        padding: 15px 20px;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    
+    .alert-error {
+        background: #FEE2E2;
+        color: #991B1B;
+        border-left: 4px solid #EF4444;
     }
     
     /* Form Styles */
@@ -446,6 +519,39 @@ include '../templates/sidebar.php';
         width: 20px;
     }
     
+    /* Department Badges */
+    .department-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    
+    .department-badge {
+        background: #F3F4F6;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 13px;
+        color: #374151;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.3s;
+        cursor: pointer;
+    }
+    
+    .department-badge i {
+        color: #1E3A8A;
+    }
+    
+    .department-badge:hover {
+        background: #1E3A8A;
+        color: white;
+    }
+    
+    .department-badge:hover i {
+        color: white;
+    }
+    
     /* Category Badges */
     .category-badges {
         display: flex;
@@ -463,6 +569,7 @@ include '../templates/sidebar.php';
         align-items: center;
         gap: 8px;
         transition: all 0.3s;
+        cursor: pointer;
     }
     
     .category-badge i {
@@ -472,7 +579,6 @@ include '../templates/sidebar.php';
     .category-badge:hover {
         background: #1E3A8A;
         color: white;
-        cursor: pointer;
     }
     
     .category-badge:hover i {
@@ -510,9 +616,17 @@ include '../templates/sidebar.php';
     
     form.addEventListener('submit', function(e) {
         const itemName = document.getElementById('item_name').value;
+        const department = document.getElementById('department').value;
+        
         if (!itemName) {
             e.preventDefault();
             showToast('Item name is required!', 'error');
+            return;
+        }
+        
+        if (!department) {
+            e.preventDefault();
+            showToast('Please select a department!', 'error');
             return;
         }
         
@@ -524,6 +638,25 @@ include '../templates/sidebar.php';
         setTimeout(() => {
             document.getElementById('item_name').focus();
         }, 100);
+    });
+    
+    // Department badge click to select
+    document.querySelectorAll('.department-badge').forEach(badge => {
+        badge.addEventListener('click', function() {
+            const department = this.getAttribute('data-dept');
+            const select = document.getElementById('department');
+            for (let i = 0; i < select.options.length; i++) {
+                if (select.options[i].value === department) {
+                    select.selectedIndex = i;
+                    break;
+                }
+            }
+            // Highlight effect
+            select.style.backgroundColor = '#D1FAE5';
+            setTimeout(() => {
+                select.style.backgroundColor = '';
+            }, 500);
+        });
     });
     
     // Category badge click to select
@@ -542,6 +675,42 @@ include '../templates/sidebar.php';
     
     // Auto focus
     document.getElementById('item_name').focus();
+    
+    function showToast(message, type) {
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: ${type === 'error' ? '#EF4444' : '#10B981'};
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            z-index: 10000;
+            animation: fadeInUp 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        `;
+        toast.innerHTML = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
 </script>
+
+<?php
+// Helper function for department icons
+function getDepartmentIcon($department) {
+    switch($department) {
+        case 'Kitchen': return 'fa-utensils';
+        case 'Housekeeping': return 'fa-broom';
+        case 'Laundry': return 'fa-tshirt';
+        case 'Front Office': return 'fa-hotel';
+        case 'Maintenance': return 'fa-wrench';
+        case 'Restaurant': return 'fa-utensil-spoon';
+        case 'Bar': return 'fa-cocktail';
+        case 'Store': return 'fa-warehouse';
+        default: return 'fa-building';
+    }
+}
+?>
 
 <?php include '../templates/footer.php'; ?>

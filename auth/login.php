@@ -3,7 +3,7 @@ require_once '../includes/config.php';
 require_once '../includes/db_connection.php';
 require_once '../includes/functions.php';
 
-if (isset($_SESSION['user_id'])) {
+if (isset($_SESSION['user_id']) || isset($_SESSION['department_user_id'])) {
     header("Location: " . APP_URL . "/dashboard.php");
     exit();
 }
@@ -17,9 +17,47 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (empty($login_input) || empty($password)) {
         $error = "Please enter your username/email and password!";
     } else {
-        // Check if input is email (contains @) or username
+        $logged_in = false;
+        
+        // ============================================
+        // 1. Try DEPARTMENT USER login (by email only)
+        // ============================================
         if (filter_var($login_input, FILTER_VALIDATE_EMAIL)) {
-            // It's an email - try supplier login first
+            $sql = "SELECT du.*, d.department_name, d.department_code 
+                    FROM department_users du
+                    JOIN departments d ON du.department_id = d.id
+                    WHERE du.email = ? AND du.status = 'active'";
+            $stmt = $db->prepare($sql);
+            $stmt->bind_param("s", $login_input);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            
+            if ($user = $result->fetch_assoc()) {
+                if (password_verify($password, $user['password'])) {
+                    $_SESSION['department_user_id'] = $user['id'];
+                    $_SESSION['department_user_name'] = $user['fullname'];
+                    $_SESSION['department_id'] = $user['department_id'];
+                    $_SESSION['department_name'] = $user['department_name'];
+                    $_SESSION['department_code'] = $user['department_code'];
+                    $_SESSION['department_email'] = $user['email'];
+                    $_SESSION['user_type'] = 'department';
+                    $_SESSION['role'] = $user['department_name'] . ' Department';
+                    
+                    logActivity(0, 'Department Login', "Department user {$user['fullname']} logged in", 'department');
+                    
+                    header("Location: " . APP_URL . "/department/dashboard.php");
+                    exit();
+                } else {
+                    $error = "Invalid username/email or password!";
+                    $logged_in = true;
+                }
+            }
+        }
+        
+        // ============================================
+        // 2. Try SUPPLIER login (by email only)
+        // ============================================
+        if (!$logged_in && filter_var($login_input, FILTER_VALIDATE_EMAIL)) {
             $sql = "SELECT * FROM suppliers WHERE email = ? AND status = 'active'";
             $stmt = $db->prepare($sql);
             $stmt->bind_param("s", $login_input);
@@ -27,7 +65,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $result = $stmt->get_result();
             
             if ($supplier = $result->fetch_assoc()) {
-                // Supplier found - verify password
                 if (password_verify($password, $supplier['password'])) {
                     $_SESSION['user_id'] = $supplier['id'];
                     $_SESSION['username'] = $supplier['company_name'];
@@ -40,50 +77,39 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     
                     logActivity(0, 'Supplier Login', "Supplier {$supplier['company_name']} logged in", 'supplier');
                     
-                    header("Location: " . APP_URL . "/dashboard.php");
+                    header("Location: " . APP_URL . "/supplier/dashboard.php");
                     exit();
                 } else {
                     $error = "Invalid username/email or password!";
+                    $logged_in = true;
                 }
-            } else {
-                // Not a supplier, try staff by email
-                $sql = "SELECT u.*, r.role_name FROM users u 
+            }
+        }
+        
+        // ============================================
+        // 3. Try STAFF login (Admin, Manager, Storekeeper, Procurement)
+        //    Can use EITHER username OR email
+        // ============================================
+        if (!$logged_in) {
+            // Check if input is email
+            if (filter_var($login_input, FILTER_VALIDATE_EMAIL)) {
+                // Login by email
+                $sql = "SELECT u.*, r.role_name 
+                        FROM users u 
                         JOIN roles r ON u.role_id = r.id 
                         WHERE u.email = ? AND u.status = 'active'";
                 $stmt = $db->prepare($sql);
                 $stmt->bind_param("s", $login_input);
-                $stmt->execute();
-                $result = $stmt->get_result();
-                
-                if ($user = $result->fetch_assoc()) {
-                    if (password_verify($password, $user['password'])) {
-                        $_SESSION['user_id'] = $user['id'];
-                        $_SESSION['username'] = $user['username'];
-                        $_SESSION['fullname'] = $user['fullname'];
-                        $_SESSION['role'] = $user['role_name'];
-                        $_SESSION['role_id'] = $user['role_id'];
-                        $_SESSION['email'] = $user['email'];
-                        $_SESSION['phone'] = $user['phone'];
-                        $_SESSION['user_type'] = 'staff';
-                        
-                        logActivity($user['id'], 'Login', 'Staff logged in successfully');
-                        
-                        header("Location: " . APP_URL . "/dashboard.php");
-                        exit();
-                    } else {
-                        $error = "Invalid username/email or password!";
-                    }
-                } else {
-                    $error = "Invalid username/email or password!";
-                }
+            } else {
+                // Login by username
+                $sql = "SELECT u.*, r.role_name 
+                        FROM users u 
+                        JOIN roles r ON u.role_id = r.id 
+                        WHERE u.username = ? AND u.status = 'active'";
+                $stmt = $db->prepare($sql);
+                $stmt->bind_param("s", $login_input);
             }
-        } else {
-            // It's a username - try staff login
-            $sql = "SELECT u.*, r.role_name FROM users u 
-                    JOIN roles r ON u.role_id = r.id 
-                    WHERE u.username = ? AND u.status = 'active'";
-            $stmt = $db->prepare($sql);
-            $stmt->bind_param("s", $login_input);
+            
             $stmt->execute();
             $result = $stmt->get_result();
             
@@ -141,26 +167,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             border-radius: 24px;
             box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
             width: 100%;
-            max-width: 440px;
-            padding: 48px 40px;
+            max-width: 460px;
+            overflow: hidden;
             transition: all 0.3s;
         }
         
         .login-header {
+            background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
+            padding: 40px 30px;
             text-align: center;
-            margin-bottom: 32px;
+            color: white;
         }
         
         .login-header .logo-icon {
             width: 70px;
             height: 70px;
-            background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
+            background: rgba(255,255,255,0.2);
             border-radius: 18px;
             display: flex;
             align-items: center;
             justify-content: center;
             margin: 0 auto 20px;
-            box-shadow: 0 10px 20px -5px rgba(30,58,138,0.3);
         }
         
         .login-header .logo-icon i {
@@ -169,15 +196,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
         
         .login-header h1 {
-            color: #1E3A8A;
-            font-size: 26px;
+            font-size: 24px;
             margin-bottom: 8px;
             font-weight: 700;
         }
         
         .login-header p {
-            color: #6B7280;
             font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .login-body {
+            padding: 40px 30px;
         }
         
         .form-group {
@@ -313,17 +343,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             margin-top: 24px;
             padding-top: 20px;
             border-top: 1px solid #E5E7EB;
-            text-align: center;
         }
         
         .info-note p {
             font-size: 12px;
             color: #9CA3AF;
+            margin-bottom: 8px;
         }
         
         .info-note i {
             color: #1E3A8A;
             margin-right: 5px;
+        }
+        
+        .role-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+            justify-content: center;
+        }
+        
+        .role-badge {
+            font-size: 10px;
+            padding: 3px 8px;
+            background: #F3F4F6;
+            border-radius: 20px;
+            color: #6B7280;
+        }
+        
+        .role-badge i {
+            margin-right: 3px;
+            font-size: 9px;
         }
         
         /* Loading state */
@@ -333,12 +384,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
         
         @media (max-width: 480px) {
-            .login-container {
-                padding: 32px 24px;
+            .login-body {
+                padding: 30px 20px;
+            }
+            
+            .login-header {
+                padding: 30px 20px;
             }
             
             .login-header h1 {
-                font-size: 24px;
+                font-size: 22px;
             }
         }
     </style>
@@ -350,44 +405,46 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <i class="fas fa-hotel"></i>
             </div>
             <h1><?php echo APP_NAME; ?></h1>
-            <p>Sign in to your account</p>
+            <p>Hotel Inventory Management System</p>
         </div>
         
-        <?php if($error): ?>
-            <div class="error-message">
-                <i class="fas fa-exclamation-circle"></i>
-                <span><?php echo $error; ?></span>
-            </div>
-        <?php endif; ?>
-        
-        <form method="POST" action="" id="loginForm">
-            <div class="form-group">
-                <label><i class="fas fa-user-circle"></i> Username or Email</label>
-                <div class="input-wrapper">
-                    <input type="text" name="login_input" id="login_input" 
-                           placeholder="Enter your username or email" 
-                           value="<?php echo htmlspecialchars($_POST['login_input'] ?? ''); ?>"
-                           autocomplete="off" required>
+        <div class="login-body">
+            <?php if($error): ?>
+                <div class="error-message">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <span><?php echo $error; ?></span>
                 </div>
-            </div>
+            <?php endif; ?>
             
-            <div class="form-group">
-                <label><i class="fas fa-lock"></i> Password</label>
-                <div class="password-wrapper">
-                    <input type="password" name="password" id="password" placeholder="Enter your password" required>
-                    <i class="fas fa-eye toggle-password" id="togglePassword"></i>
+            <form method="POST" action="" id="loginForm">
+                <div class="form-group">
+                    <label><i class="fas fa-user-circle"></i> Username or Email</label>
+                    <div class="input-wrapper">
+                        <input type="text" name="login_input" id="login_input" 
+                               placeholder="Enter your username or email" 
+                               value="<?php echo htmlspecialchars($_POST['login_input'] ?? ''); ?>"
+                               autocomplete="off" required>
+                    </div>
                 </div>
-            </div>
+                
+                <div class="form-group">
+                    <label><i class="fas fa-lock"></i> Password</label>
+                    <div class="password-wrapper">
+                        <input type="password" name="password" id="password" placeholder="Enter your password" required>
+                        <i class="fas fa-eye toggle-password" id="togglePassword"></i>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn-login" id="loginBtn">
+                    <i class="fas fa-sign-in-alt"></i> Sign In
+                </button>
+            </form>
             
-            <button type="submit" class="btn-login" id="loginBtn">
-                <i class="fas fa-sign-in-alt"></i> Sign In
-            </button>
-        </form>
-        
-        <div class="forgot-password">
-            <a href="forgot_password.php"><i class="fas fa-key"></i> Forgot Password?</a>
+            <div class="forgot-password">
+                <a href="forgot_password.php"><i class="fas fa-key"></i> Forgot Password?</a>
+            </div>
+         
         </div>
-        
     </div>
     
     <script>
@@ -395,46 +452,56 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         const togglePassword = document.getElementById('togglePassword');
         const password = document.getElementById('password');
         
-        togglePassword.addEventListener('click', function() {
-            const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
-            password.setAttribute('type', type);
-            this.classList.toggle('fa-eye');
-            this.classList.toggle('fa-eye-slash');
-        });
+        if (togglePassword) {
+            togglePassword.addEventListener('click', function() {
+                const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
+                password.setAttribute('type', type);
+                this.classList.toggle('fa-eye');
+                this.classList.toggle('fa-eye-slash');
+            });
+        }
         
         // Form submit loading state
         const form = document.getElementById('loginForm');
         const loginBtn = document.getElementById('loginBtn');
         const loginInput = document.getElementById('login_input');
         
-        form.addEventListener('submit', function(e) {
-            if (loginInput.value.trim() === '' || password.value === '') {
-                e.preventDefault();
-                return;
-            }
-            
-            loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Signing in...';
-            loginBtn.classList.add('loading');
-            loginBtn.disabled = true;
-        });
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                if (loginInput.value.trim() === '' || password.value === '') {
+                    e.preventDefault();
+                    return;
+                }
+                
+                loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Signing in...';
+                loginBtn.classList.add('loading');
+                loginBtn.disabled = true;
+            });
+        }
         
         // Auto focus on login input
-        loginInput.focus();
+        if (loginInput) {
+            loginInput.focus();
+        }
         
         // Allow Enter key to submit
-        loginInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                form.submit();
-            }
-        });
+        if (loginInput) {
+            loginInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (form) form.submit();
+                }
+            });
+        }
         
-        password.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                form.submit();
-            }
-        });
+        if (password) {
+            password.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (form) form.submit();
+                }
+            });
+        }
     </script>
 </body>
 </html>

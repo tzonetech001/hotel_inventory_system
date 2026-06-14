@@ -6,7 +6,7 @@ use hotel_inventory_system;
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jun 05, 2026 at 08:07 AM
+-- Generation Time: Jun 14, 2026 at 06:23 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -68,7 +68,72 @@ CREATE TABLE `deliveries` (
 --
 
 INSERT INTO `deliveries` (`id`, `po_id`, `delivery_date`, `received_by`, `notes`, `created_at`) VALUES
-(1, 1, '2026-05-23', 3, '', '2026-05-23 11:36:38');
+(1, 1, '2026-05-23', 3, '', '2026-05-23 11:36:38'),
+(2, 4, '2026-06-14', 3, '', '2026-06-14 12:31:01'),
+(3, 5, '2026-06-14', 3, '', '2026-06-14 12:31:22');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `departments`
+--
+
+CREATE TABLE `departments` (
+  `id` int(11) NOT NULL,
+  `department_name` varchar(100) NOT NULL,
+  `department_code` varchar(20) NOT NULL,
+  `description` text DEFAULT NULL,
+  `status` enum('active','inactive') DEFAULT 'active',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `departments`
+--
+
+INSERT INTO `departments` (`id`, `department_name`, `department_code`, `description`, `status`, `created_at`) VALUES
+(1, 'Restaurant', 'REST', 'Food and beverage service department', 'active', '2026-06-13 06:56:22'),
+(2, 'Bar', 'BAR', 'Drinks and beverages service', 'active', '2026-06-13 06:56:22'),
+(3, 'Housekeeping', 'HK', 'Room cleaning and maintenance', 'active', '2026-06-13 06:56:22'),
+(4, 'Kitchen', 'KITCH', 'Food preparation department', 'active', '2026-06-13 06:56:22'),
+(5, 'Laundry', 'LAUND', 'Linen and clothing cleaning', 'active', '2026-06-13 06:56:22'),
+(6, 'Maintenance', 'MAINT', 'Equipment and facility maintenance', 'active', '2026-06-13 06:56:22'),
+(7, 'Front Office', 'FO', 'Guest reception and check-in/out', 'active', '2026-06-13 06:56:22'),
+(8, 'Other', 'OTHER', 'Other departments', 'active', '2026-06-13 06:56:22');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `department_users`
+--
+
+CREATE TABLE `department_users` (
+  `id` int(11) NOT NULL,
+  `department_id` int(11) NOT NULL,
+  `fullname` varchar(100) NOT NULL,
+  `sex` enum('Male','Female','Other') DEFAULT NULL,
+  `email` varchar(100) NOT NULL,
+  `phone` varchar(20) NOT NULL,
+  `password` varchar(255) NOT NULL,
+  `employee_id` varchar(50) DEFAULT NULL,
+  `position` varchar(100) DEFAULT NULL,
+  `status` enum('active','inactive') DEFAULT 'active',
+  `profile_picture` varchar(255) DEFAULT NULL,
+  `last_login` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `reset_token` varchar(100) DEFAULT NULL,
+  `reset_expires` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `department_users`
+--
+
+INSERT INTO `department_users` (`id`, `department_id`, `fullname`, `sex`, `email`, `phone`, `password`, `employee_id`, `position`, `status`, `profile_picture`, `last_login`, `created_at`, `updated_at`, `reset_token`, `reset_expires`) VALUES
+(1, 4, 'bamfu bamfu', 'Male', 'bbamfu@gmail.com', '076554544', '$2y$10$Eblr50NOpoAoqMH0tTm9qOtsLnC4G9denDmw2EjvC5cuoPa9v9LjK', NULL, NULL, 'active', NULL, '2026-06-14 17:34:34', '2026-06-13 07:09:20', '2026-06-14 15:01:39', 'd88edd8e6c2e99eb1427dcccf7a44164a7cf9a2cac807f5df25dc34fc3189890', '2026-06-14 19:01:39'),
+(5, 6, 'Francsico peter', 'Male', 'franc@gmail.com', '0765432123', '$2y$10$YMu2e3to39BK2S5XxNtX6OeKIra2yzgEkbGA9ITpZi/t7zTg8drGK', NULL, NULL, 'active', NULL, NULL, '2026-06-14 14:00:29', '2026-06-14 14:00:29', NULL, NULL),
+(6, 3, 'samson jumanne', 'Male', 'sam@gmail.com', '0714343167', '$2y$10$czzHC8vLy3X5pWMDcdsf8uC2unyKTIyg5smuPO/zCWb87.usicBZ2', NULL, NULL, 'active', NULL, NULL, '2026-06-14 14:15:00', '2026-06-14 14:54:17', NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -87,6 +152,8 @@ CREATE TABLE `inventory_items` (
   `unit_price` decimal(10,2) DEFAULT NULL,
   `supplier_id` int(11) DEFAULT NULL,
   `location` varchar(100) DEFAULT NULL,
+  `department` varchar(50) DEFAULT 'Store',
+  `default_department_id` int(11) DEFAULT NULL,
   `status` enum('active','inactive') DEFAULT 'active',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
@@ -96,15 +163,18 @@ CREATE TABLE `inventory_items` (
 -- Dumping data for table `inventory_items`
 --
 
-INSERT INTO `inventory_items` (`id`, `item_name`, `category`, `unit`, `current_stock`, `minimum_stock`, `maximum_stock`, `unit_price`, `supplier_id`, `location`, `status`, `created_at`, `updated_at`) VALUES
-(1, 'White Rice', 'Food', 'kg', 159, 30, 500, 2500.00, 1, NULL, 'active', '2026-05-23 07:34:37', '2026-05-23 11:36:38'),
-(2, 'Cooking Oil', 'Food', 'liters', 80, 20, 500, 3500.00, 1, NULL, 'active', '2026-05-23 07:34:37', '2026-05-23 07:34:37'),
-(3, 'Beef', 'Food', 'kg', 120, 15, 500, 12000.00, 1, '0', 'active', '2026-05-23 07:34:37', '2026-06-05 06:01:43'),
-(4, 'Bottled Water', 'Beverages', 'bottles', 200, 50, 500, 800.00, 2, NULL, 'active', '2026-05-23 07:34:37', '2026-05-23 07:34:37'),
-(5, 'Soda Mix', 'Beverages', 'cartons', 60, 15, 500, 12000.00, 2, NULL, 'active', '2026-05-23 07:34:37', '2026-05-23 07:34:37'),
-(6, 'Laundry Soap', 'Cleaning', 'bars', 90, 20, 500, 1800.00, 3, NULL, 'active', '2026-05-23 07:34:37', '2026-05-23 07:34:37'),
-(7, 'Dishwasher Liquid', 'Cleaning', 'liters', 40, 10, 500, 8500.00, 3, NULL, 'active', '2026-05-23 07:34:37', '2026-05-23 07:34:37'),
-(8, 'Unga', 'Food', 'kg', 80, 10, 500, 1200.00, 1, '', 'active', '2026-05-24 12:45:01', '2026-05-24 12:45:01');
+INSERT INTO `inventory_items` (`id`, `item_name`, `category`, `unit`, `current_stock`, `minimum_stock`, `maximum_stock`, `unit_price`, `supplier_id`, `location`, `department`, `default_department_id`, `status`, `created_at`, `updated_at`) VALUES
+(1, 'White Rice', 'Food', 'kg', 159, 30, 500, 2500.00, 1, NULL, 'Store', NULL, 'active', '2026-05-23 07:34:37', '2026-05-23 11:36:38'),
+(2, 'Cooking Oil', 'Food', 'liters', 100, 20, 500, 3500.00, 1, NULL, 'Store', NULL, 'active', '2026-05-23 07:34:37', '2026-06-14 12:31:01'),
+(3, 'Beef', 'Food', 'kg', 110, 15, 500, 12000.00, 1, '0', 'Store', NULL, 'active', '2026-05-23 07:34:37', '2026-06-14 11:28:33'),
+(4, 'Bottled Water', 'Beverages', 'bottles', 200, 50, 500, 800.00, 2, NULL, 'Store', NULL, 'active', '2026-05-23 07:34:37', '2026-05-23 07:34:37'),
+(5, 'Soda Mix', 'Beverages', 'cartons', 60, 15, 500, 12000.00, 2, NULL, 'Store', NULL, 'active', '2026-05-23 07:34:37', '2026-05-23 07:34:37'),
+(6, 'Laundry Soap', 'Cleaning', 'bars', 90, 20, 500, 1800.00, 3, NULL, 'Store', NULL, 'active', '2026-05-23 07:34:37', '2026-05-23 07:34:37'),
+(7, 'Dishwasher Liquid', 'Cleaning', 'liters', 40, 10, 500, 8500.00, 3, NULL, 'Store', NULL, 'active', '2026-05-23 07:34:37', '2026-05-23 07:34:37'),
+(8, 'Unga', 'Food', 'kg', 80, 10, 500, 1200.00, 1, '', 'Store', NULL, 'active', '2026-05-24 12:45:01', '2026-05-24 12:45:01'),
+(9, 'Bulbs', 'Equipment', 'pieces', 100, 10, 500, 0.00, 5, '', 'Store', NULL, 'active', '2026-06-13 06:03:58', '2026-06-13 06:03:58'),
+(10, 'Switch', 'Equipment', 'pieces', 180, 10, 500, 3000.00, 5, '', 'Store', NULL, 'active', '2026-06-13 06:04:42', '2026-06-14 12:31:22'),
+(11, 'rice', 'Equipment', 'kg', 3000, 10, 500, 200.00, 1, '', 'Kitchen', NULL, 'active', '2026-06-14 12:24:53', '2026-06-14 12:25:56');
 
 -- --------------------------------------------------------
 
@@ -130,7 +200,9 @@ INSERT INTO `po_items` (`id`, `po_id`, `item_id`, `quantity`, `received_quantity
 (1, 1, 1, 9, 0, 2500.00, 22500.00),
 (2, 2, 5, 10, 0, 12000.00, 120000.00),
 (3, 3, 8, 100, 0, 1200.00, 120000.00),
-(4, 4, 2, 20, 0, 3500.00, 70000.00);
+(4, 4, 2, 20, 0, 3500.00, 70000.00),
+(5, 5, 10, 100, 0, 3000.00, 300000.00),
+(6, 6, 9, 10, 0, 7000.00, 70000.00);
 
 -- --------------------------------------------------------
 
@@ -148,7 +220,9 @@ CREATE TABLE `purchase_orders` (
   `status` enum('pending','approved','rejected','delivered','confirmed') DEFAULT 'pending',
   `created_by` int(11) NOT NULL,
   `approved_by` int(11) DEFAULT NULL,
+  `approved_at` datetime DEFAULT NULL,
   `notes` text DEFAULT NULL,
+  `rejection_reason` text DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -156,11 +230,13 @@ CREATE TABLE `purchase_orders` (
 -- Dumping data for table `purchase_orders`
 --
 
-INSERT INTO `purchase_orders` (`id`, `po_number`, `supplier_id`, `order_date`, `expected_delivery`, `total_amount`, `status`, `created_by`, `approved_by`, `notes`, `created_at`) VALUES
-(1, 'PO-202605-0001', 2, '2026-05-23', '2026-05-30', 22500.00, 'delivered', 4, 6, 'hello', '2026-05-23 10:15:49'),
-(2, 'PO-202605-0002', 4, '2026-05-23', '2026-05-30', 120000.00, 'delivered', 4, 6, 'sabuni zimeisha', '2026-05-23 13:28:06'),
-(3, 'PO-202605-0003', 1, '2026-05-24', '2026-05-31', 120000.00, 'rejected', 4, 6, '', '2026-05-24 12:47:35'),
-(4, 'PO-202605-0004', 1, '2026-05-29', '2026-06-05', 70000.00, 'pending', 4, NULL, '', '2026-05-29 17:21:59');
+INSERT INTO `purchase_orders` (`id`, `po_number`, `supplier_id`, `order_date`, `expected_delivery`, `total_amount`, `status`, `created_by`, `approved_by`, `approved_at`, `notes`, `rejection_reason`, `created_at`) VALUES
+(1, 'PO-202605-0001', 2, '2026-05-23', '2026-05-30', 22500.00, 'delivered', 4, 6, NULL, 'hello', NULL, '2026-05-23 10:15:49'),
+(2, 'PO-202605-0002', 4, '2026-05-23', '2026-05-30', 120000.00, 'delivered', 4, 6, NULL, 'sabuni zimeisha', NULL, '2026-05-23 13:28:06'),
+(3, 'PO-202605-0003', 1, '2026-05-24', '2026-05-31', 120000.00, 'rejected', 4, 6, NULL, '', NULL, '2026-05-24 12:47:35'),
+(4, 'PO-202605-0004', 1, '2026-05-29', '2026-06-05', 70000.00, 'delivered', 4, 2, NULL, '', NULL, '2026-05-29 17:21:59'),
+(5, 'PO-202606-0001', 5, '2026-06-13', '2026-06-20', 300000.00, 'delivered', 4, 2, '2026-06-13 09:25:10', '', NULL, '2026-06-13 06:07:34'),
+(6, 'PO-202606-0002', 5, '2026-06-13', '2026-06-20', 70000.00, 'pending', 2, NULL, NULL, '', NULL, '2026-06-13 06:49:45');
 
 -- --------------------------------------------------------
 
@@ -216,7 +292,68 @@ INSERT INTO `stock_movements` (`id`, `item_id`, `movement_type`, `quantity`, `re
 (7, 1, 'IN', 9, 'PO Delivery - Order #1', NULL, 3, '2026-05-23 11:36:38'),
 (8, 8, 'IN', 40, 'Initial stock', NULL, 3, '2026-05-24 12:45:01'),
 (9, 3, 'OUT', 10, '', NULL, 3, '2026-06-04 20:14:17'),
-(10, 3, 'IN', 90, 'Direct Stock In - 20260605090143', NULL, 3, '2026-06-05 06:01:43');
+(10, 3, 'IN', 90, 'Direct Stock In - 20260605090143', NULL, 3, '2026-06-05 06:01:43'),
+(11, 9, 'IN', 50, 'Initial stock', NULL, 3, '2026-06-13 06:03:58'),
+(12, 10, 'IN', 40, 'Initial stock', NULL, 3, '2026-06-13 06:04:42'),
+(13, 3, 'OUT', 10, 'QR Confirmed - REQ-20260613-6A2D016E75DA1', NULL, 3, '2026-06-14 11:28:33'),
+(14, 11, 'IN', 3000, '', NULL, 3, '2026-06-14 12:25:56'),
+(15, 2, 'IN', 20, 'PO Delivery - Order #4', NULL, 3, '2026-06-14 12:31:01'),
+(16, 10, 'IN', 100, 'PO Delivery - Order #5', NULL, 3, '2026-06-14 12:31:22');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `stock_out_confirmations`
+--
+
+CREATE TABLE `stock_out_confirmations` (
+  `id` int(11) NOT NULL,
+  `request_id` int(11) NOT NULL,
+  `confirmed_by` int(11) NOT NULL COMMENT 'department user id',
+  `confirmation_method` enum('qr_scan','manual') DEFAULT 'qr_scan',
+  `confirmed_at` datetime NOT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `device_info` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `stock_out_confirmations`
+--
+
+INSERT INTO `stock_out_confirmations` (`id`, `request_id`, `confirmed_by`, `confirmation_method`, `confirmed_at`, `ip_address`, `device_info`, `created_at`) VALUES
+(1, 1, 1, 'qr_scan', '2026-06-14 14:28:33', '::1', NULL, '2026-06-14 11:28:33');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `stock_requests`
+--
+
+CREATE TABLE `stock_requests` (
+  `id` int(11) NOT NULL,
+  `request_code` varchar(50) NOT NULL,
+  `item_id` int(11) NOT NULL,
+  `quantity` int(11) NOT NULL,
+  `department_id` int(11) NOT NULL,
+  `requested_by` int(11) NOT NULL COMMENT 'storekeeper who created request',
+  `department_user_id` int(11) DEFAULT NULL COMMENT 'department staff who confirmed',
+  `status` enum('pending','confirmed','cancelled','rejected') DEFAULT 'pending',
+  `qr_code` text NOT NULL,
+  `request_date` datetime NOT NULL,
+  `confirmed_at` datetime DEFAULT NULL,
+  `rejection_reason` text DEFAULT NULL,
+  `notes` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `stock_requests`
+--
+
+INSERT INTO `stock_requests` (`id`, `request_code`, `item_id`, `quantity`, `department_id`, `requested_by`, `department_user_id`, `status`, `qr_code`, `request_date`, `confirmed_at`, `rejection_reason`, `notes`, `created_at`) VALUES
+(1, 'REQ-20260613-6A2D016E75DA1', 3, 10, 4, 3, 1, 'confirmed', 'eyJyZXF1ZXN0X2NvZGUiOiJSRVEtMjAyNjA2MTMtNkEyRDAxNkU3NURBMSIsIml0ZW1faWQiOjMsInF1YW50aXR5IjoxMCwiZGVwYXJ0bWVudF9pZCI6NCwiY3JlYXRlZF9ieSI6MywidGltZXN0YW1wIjoiMjAyNi0wNi0xMyAxMDowNjoyMiJ9', '2026-06-13 10:06:22', '2026-06-14 14:28:33', NULL, '', '2026-06-13 07:06:22'),
+(2, 'REQ-20260614-6A2E9E3DC1BEE', 11, 60, 4, 3, NULL, 'pending', 'eyJyZXF1ZXN0X2NvZGUiOiJSRVEtMjAyNjA2MTQtNkEyRTlFM0RDMUJFRSIsIml0ZW1faWQiOjExLCJxdWFudGl0eSI6NjAsImRlcGFydG1lbnRfaWQiOjQsImNyZWF0ZWRfYnkiOjMsInRpbWVzdGFtcCI6IjIwMjYtMDYtMTQgMTU6Mjc6NDEifQ==', '2026-06-14 15:27:41', NULL, NULL, '', '2026-06-14 12:27:41');
 
 -- --------------------------------------------------------
 
@@ -248,7 +385,8 @@ INSERT INTO `suppliers` (`id`, `company_name`, `contact_person`, `email`, `phone
 (1, 'Fresh Food Supplies Ltd', 'Joseph Mwangi', 'info@freshfood.co.tz', '0712345683', 'Dar es Salaam', 'active', '2026-05-23 07:34:37', '$2y$10$I7qrMlg9yZv3QP57tThw5e0WnRyktNsvXnJNJkz7MZOZxOhQgx5Q.', NULL, NULL, 0, '2026-05-24 12:48:17'),
 (2, 'Beverages Wholesale', 'Maria John', 'sales@beverages.co.tz', '0712345684', 'Arusha', 'active', '2026-05-23 07:34:37', '$2y$10$CV2fk0fjDTsx2uPsVT76LO3.D9O/HMLuXhCCNzmhj512SZhJlln5e', NULL, NULL, 0, '2026-05-23 13:09:24'),
 (3, 'Hotel Equipments', 'Robert Kimathi', 'robert@hotelequip.co.tz', '0712345685', 'Moshi', 'active', '2026-05-23 07:34:37', '$2y$10$f8cSNmxHnPP15M9VSfc7yO5ubSUHn8u.ijrFHzq2W93/JWYxc2mNW', NULL, NULL, 0, '2026-05-23 13:09:32'),
-(4, 'cleanning material', 'bamfu bamfu', 'supplier@gmail.com', '', '', 'active', '2026-05-23 13:21:04', '$2y$10$POIX/JmmdV1HKHqtDKyiY.3rZfeWJZpFaY.kiEtS/61Rc.kLRUPXi', NULL, NULL, 0, '2026-06-04 21:12:16');
+(4, 'cleanning material', 'bamfu bamfu', 'supplier@gmail.com', '', '', 'active', '2026-05-23 13:21:04', '$2y$10$POIX/JmmdV1HKHqtDKyiY.3rZfeWJZpFaY.kiEtS/61Rc.kLRUPXi', NULL, NULL, 0, '2026-06-04 21:12:16'),
+(5, 'Eletrical matirial', 'TZONE TECH', 'tzone@gmail.com', '0765456789', 'MABIBO DAR ES SALAAM', 'active', '2026-06-13 05:46:44', '$2y$10$TuDWK7oN//YM6.OqxZyr8Oyhxji71CuwS7k8zooI1tr/Gby/d9HCq', 'af1615fa669d276ac7570562d3d0b321ec35ab11cfa42cec3b5d71fa9316692c', '2026-06-14 19:08:47', 0, '2026-06-14 15:08:47');
 
 -- --------------------------------------------------------
 
@@ -442,7 +580,81 @@ INSERT INTO `system_logs` (`id`, `user_id`, `action`, `details`, `ip_address`, `
 (171, 4, 'Login', 'Staff logged in successfully', '::1', '2026-06-05 05:31:44'),
 (172, 4, 'Update Profile', 'Updated profile information', '::1', '2026-06-05 05:32:41'),
 (173, 3, 'Login', 'Staff logged in successfully', '::1', '2026-06-05 05:37:12'),
-(174, 3, 'Stock IN', 'Added 90 units to item ID: 3. Reference: Direct Stock In - 20260605090143', '::1', '2026-06-05 06:01:43');
+(174, 3, 'Stock IN', 'Added 90 units to item ID: 3. Reference: Direct Stock In - 20260605090143', '::1', '2026-06-05 06:01:43'),
+(175, 1, 'Login', 'Staff logged in successfully', '::1', '2026-06-05 07:22:27'),
+(176, 1, 'Upload Profile Picture', 'Updated profile picture', '::1', '2026-06-05 07:22:46'),
+(177, 1, 'Update Profile', 'Updated profile information', '::1', '2026-06-05 07:27:53'),
+(178, 1, 'Update Profile', 'Updated profile information', '::1', '2026-06-05 07:28:39'),
+(179, 1, 'Remove Profile Picture', 'Removed profile picture', '::1', '2026-06-05 08:01:03'),
+(180, 1, 'Upload Profile Picture', 'Updated profile picture', '::1', '2026-06-05 08:01:11'),
+(181, 1, 'Login', 'Staff logged in successfully', '::1', '2026-06-09 19:56:33'),
+(182, 4, 'Logout', 'User logged out', '::1', '2026-06-10 04:22:22'),
+(183, 4, 'Logout', 'User logged out', '::1', '2026-06-10 06:04:51'),
+(184, 4, 'Logout', 'User logged out', '::1', '2026-06-10 06:05:17'),
+(185, 4, 'Logout', 'User logged out', '::1', '2026-06-10 06:05:57'),
+(186, 3, 'Login', 'Staff logged in successfully', '::1', '2026-06-12 21:28:18'),
+(187, 3, 'Logout', 'User logged out', '::1', '2026-06-12 21:53:04'),
+(188, 4, 'Logout', 'User logged out', '::1', '2026-06-13 05:44:03'),
+(189, 2, 'Login', 'Staff logged in successfully', '::1', '2026-06-13 05:44:47'),
+(190, 2, 'Add Supplier', 'Added new supplier: Eletrical matirial', '::1', '2026-06-13 05:46:44'),
+(191, 2, 'Reset Supplier Password', 'Reset password for supplier: Eletrical matirial', '::1', '2026-06-13 05:47:11'),
+(192, 2, 'Approve PO', 'Purchase order ID: 4 - approved', '::1', '2026-06-13 05:47:55'),
+(193, 2, 'Logout', 'User logged out', '::1', '2026-06-13 05:48:29'),
+(194, 4, 'Login', 'Staff logged in successfully', '::1', '2026-06-13 05:48:41'),
+(195, 4, 'Logout', 'User logged out', '::1', '2026-06-13 05:51:28'),
+(196, 4, 'Login', 'Staff logged in successfully', '::1', '2026-06-13 05:53:21'),
+(197, 4, 'Logout', 'User logged out', '::1', '2026-06-13 05:53:49'),
+(198, 2, 'Login', 'Staff logged in successfully', '::1', '2026-06-13 05:53:59'),
+(199, 4, 'Login', 'Staff logged in successfully', '::1', '2026-06-13 06:01:25'),
+(200, 3, 'Login', 'Staff logged in successfully', '::1', '2026-06-13 06:03:08'),
+(201, 3, 'Add Item', 'Added new item: Bulbs', '::1', '2026-06-13 06:03:58'),
+(202, 3, 'Add Item', 'Added new item: Switch', '::1', '2026-06-13 06:04:42'),
+(203, 4, 'Create PO', 'Created purchase order: PO-202606-0001', '::1', '2026-06-13 06:07:34'),
+(208, 2, 'Approve/Reject PO', 'Purchase order ID: 5 - Approved', '::1', '2026-06-13 06:25:10'),
+(209, 2, 'Price Set', 'Price set for Bulbs to 7,000.00', '::1', '2026-06-13 06:49:45'),
+(210, 2, 'Price Changes', 'PO PO-202606-0002: 1 item(s) had price adjustments', '::1', '2026-06-13 06:49:45'),
+(211, 2, 'Create PO', 'Created purchase order: PO-202606-0002', '::1', '2026-06-13 06:49:45'),
+(212, 3, 'Stock Request', 'Created stock request #REQ-20260613-6A2D016E75DA1 for 10 units of item ID: 3', '::1', '2026-06-13 07:06:22'),
+(213, 3, 'Login', 'Staff logged in successfully', '::1', '2026-06-14 11:07:41'),
+(214, 3, 'Stock OUT Confirmed', 'Request REQ-20260613-6A2D016E75DA1 confirmed by department user ID: 1', '::1', '2026-06-14 11:28:33'),
+(215, 3, 'Login', 'Staff logged in successfully', '192.168.1.116', '2026-06-14 11:41:01'),
+(216, 3, 'Login', 'Staff logged in successfully', '::1', '2026-06-14 12:04:42'),
+(217, 4, 'Login', 'Staff logged in successfully', '::1', '2026-06-14 12:07:55'),
+(218, 3, 'Add Item', 'Added new item: rice (Department: Kitchen)', '::1', '2026-06-14 12:24:53'),
+(219, 3, 'Stock Adjustment', 'Increased stock of rice by 3000. Reason: New Purchase Order', '::1', '2026-06-14 12:25:56'),
+(220, 3, 'Stock Request', 'Created stock request #REQ-20260614-6A2E9E3DC1BEE for 60 units of item ID: 11', '::1', '2026-06-14 12:27:41'),
+(221, 4, 'Logout', 'User logged out', '::1', '2026-06-14 12:29:49'),
+(222, 3, 'Confirm Delivery', 'Confirmed delivery for PO ID: 4 and updated stock', '::1', '2026-06-14 12:31:01'),
+(223, 3, 'Confirm Delivery', 'Confirmed delivery for PO ID: 5 and updated stock', '::1', '2026-06-14 12:31:22'),
+(224, 1, 'Login', 'Staff logged in successfully', '::1', '2026-06-14 13:28:37'),
+(225, 2, 'Login', 'Staff logged in successfully', '::1', '2026-06-14 13:36:32'),
+(226, 2, 'Login', 'Staff logged in successfully', '::1', '2026-06-14 13:36:43'),
+(227, 1, 'Reset Department User Password', 'Reset password for user: bamfu bamfu', '::1', '2026-06-14 13:53:29'),
+(228, 1, 'Toggle Department User', 'Changed user bamfu bamfu status to inactive', '::1', '2026-06-14 13:53:35'),
+(229, 1, 'Toggle Department User', 'Changed user bamfu bamfu status to active', '::1', '2026-06-14 13:53:37'),
+(230, 1, 'Register Department User', 'Registered new user: Francsico peter (franc@gmail.com)', '::1', '2026-06-14 14:00:29'),
+(231, 1, 'Register Department User', 'Registered new user: samson jumanne (sam@gmail.com) with default password', '::1', '2026-06-14 14:15:00'),
+(232, 1, 'Edit Department User', 'Updated user: samson jumanne', '::1', '2026-06-14 14:17:35'),
+(233, 1, 'Edit Department User', 'Updated user: samson jumanne', '::1', '2026-06-14 14:17:48'),
+(234, 2, 'Edit Department User', 'Updated user: samson jumanne', '::1', '2026-06-14 14:21:14'),
+(235, 2, 'Toggle Department User', 'Changed user samson jumanne status to active', '::1', '2026-06-14 14:21:17'),
+(236, 6, 'Department Login', 'Department user samson jumanne from Housekeeping logged in', '::1', '2026-06-14 14:26:04'),
+(237, 6, 'Logout', 'User logged out', '::1', '2026-06-14 14:26:04'),
+(238, 2, 'Reset Department User Password', 'Reset password for user: bamfu bamfu', '::1', '2026-06-14 14:26:29'),
+(239, 2, 'Edit Department User', 'Updated user: bamfu bamfu', '::1', '2026-06-14 14:26:29'),
+(240, 1, 'Department Login', 'Department user bamfu bamfu from Kitchen logged in', '::1', '2026-06-14 14:26:51'),
+(241, 1, 'Logout', 'User logged out', '::1', '2026-06-14 14:26:51'),
+(242, 2, 'Login', 'Staff logged in successfully', '::1', '2026-06-14 14:27:06'),
+(243, 2, 'Logout', 'User logged out', '::1', '2026-06-14 14:27:14'),
+(244, 1, 'Logout', 'User logged out', '::1', '2026-06-14 14:31:32'),
+(245, 1, 'Department Login', 'Department user bamfu bamfu from Kitchen logged in', '::1', '2026-06-14 14:34:34'),
+(246, 2, 'Logout', 'User logged out', '::1', '2026-06-14 14:42:54'),
+(247, 2, 'Reset Department User Password', 'Reset password for user: samson jumanne', '::1', '2026-06-14 14:54:17'),
+(248, 2, 'Edit Department User', 'Updated user: samson jumanne', '::1', '2026-06-14 14:54:17'),
+(249, 2, 'Logout', 'User logged out', '::1', '2026-06-14 14:55:57'),
+(251, 1, 'Login', 'Staff logged in successfully', '::1', '2026-06-14 15:07:09'),
+(252, 1, 'Delete User', 'Deleted user: tzone (ID: 7)', '::1', '2026-06-14 15:08:18'),
+(253, 1, 'Logout', 'User logged out', '::1', '2026-06-14 15:08:21');
 
 -- --------------------------------------------------------
 
@@ -472,12 +684,11 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`id`, `fullname`, `username`, `password`, `email`, `phone`, `role_id`, `status`, `created_at`, `phone_verified`, `reset_token`, `reset_expires`, `profile_picture`, `updated_at`) VALUES
-(1, 'hello', 'admin', '$2y$10$kUdzuormSrY2.woydzTZEOTehkQ5O2rybVU41/Rni1fbuIh/E6Wh2', 'admin@ggmail.com', '0712345678', 1, 'active', '2026-05-23 07:34:37', 1, NULL, NULL, 'user_1_1779536458.jpg', '2026-06-04 21:34:44'),
+(1, 'tzone', 'admin', '$2y$10$kUdzuormSrY2.woydzTZEOTehkQ5O2rybVU41/Rni1fbuIh/E6Wh2', 'admin@gmail.com', '0712345678', 1, 'active', '2026-05-23 07:34:37', 1, NULL, NULL, 'user_1_1780646471.jpg', '2026-06-05 08:01:11'),
 (2, 'John Manager', 'manager', '$2y$10$zd8fjaty/tb3XKCzvrU8Su1pgTkCTiu.ebvOVn2KeGb7wvks.biEq', 'manager@hotel.com', '0712345679', 2, 'active', '2026-05-23 07:34:37', 1, NULL, NULL, NULL, '2026-05-23 08:36:11'),
 (3, 'James Store', 'storekeeper', '$2y$10$xalpSrvyq9PrOhJgPP7TZOiLeRgA5kLPq2r/l/2N8HUvYe.Oc6M7C', 'storekeeper@hotel.com', '0712345680', 3, 'active', '2026-05-23 07:34:37', 1, NULL, NULL, NULL, '2026-05-23 08:36:11'),
 (4, 'Peter Procurement', 'procurement', '$2y$10$XZFodyOhL3B9tOwF8pOaWOGqpmtTQL/frRcQFfkOAGughUqmGC7i.', 'procurement@gmail.com', '0712345681', 4, 'active', '2026-05-23 07:34:37', 1, NULL, NULL, NULL, '2026-06-05 05:32:41'),
-(6, 'bamfu bamfu', 'bamfu', '$2y$10$ADIOpG4byjoOkDJXUfcUGeMlLqUlI8pVoL9jQPItUcrzkAEUEiV8C', 'bbamfu@gmail.com', '12345678', 2, 'active', '2026-05-23 08:24:12', 0, NULL, NULL, NULL, '2026-05-29 17:34:12'),
-(7, 'tzone tech', 'tzone', '$2y$10$NEJPUM66sE2DkM5fK1fs2ulfzXKwGeWK3y/CzSf4uDucJtUaIHhkq', 'tzone@gmail.com', '0712345378', 1, 'active', '2026-05-25 14:47:14', 0, NULL, NULL, NULL, '2026-05-25 14:47:14');
+(6, 'bamfu bamfu', 'bamfu', '$2y$10$ADIOpG4byjoOkDJXUfcUGeMlLqUlI8pVoL9jQPItUcrzkAEUEiV8C', 'bbamfu@gmail.com', '12345678', 2, 'active', '2026-05-23 08:24:12', 0, NULL, NULL, NULL, '2026-05-29 17:34:12');
 
 --
 -- Indexes for dumped tables
@@ -499,10 +710,27 @@ ALTER TABLE `deliveries`
   ADD KEY `received_by` (`received_by`);
 
 --
+-- Indexes for table `departments`
+--
+ALTER TABLE `departments`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `department_code` (`department_code`);
+
+--
+-- Indexes for table `department_users`
+--
+ALTER TABLE `department_users`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `email` (`email`),
+  ADD KEY `department_id` (`department_id`),
+  ADD KEY `idx_department_users_email` (`email`);
+
+--
 -- Indexes for table `inventory_items`
 --
 ALTER TABLE `inventory_items`
-  ADD PRIMARY KEY (`id`);
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `default_department_id` (`default_department_id`);
 
 --
 -- Indexes for table `po_items`
@@ -536,6 +764,28 @@ ALTER TABLE `stock_movements`
   ADD PRIMARY KEY (`id`),
   ADD KEY `item_id` (`item_id`),
   ADD KEY `performed_by` (`performed_by`);
+
+--
+-- Indexes for table `stock_out_confirmations`
+--
+ALTER TABLE `stock_out_confirmations`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `request_id` (`request_id`),
+  ADD KEY `confirmed_by` (`confirmed_by`);
+
+--
+-- Indexes for table `stock_requests`
+--
+ALTER TABLE `stock_requests`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `request_code` (`request_code`),
+  ADD KEY `item_id` (`item_id`),
+  ADD KEY `department_id` (`department_id`),
+  ADD KEY `requested_by` (`requested_by`),
+  ADD KEY `department_user_id` (`department_user_id`),
+  ADD KEY `idx_stock_requests_status` (`status`),
+  ADD KEY `idx_stock_requests_request_code` (`request_code`),
+  ADD KEY `idx_stock_requests_created` (`created_at`);
 
 --
 -- Indexes for table `suppliers`
@@ -575,25 +825,37 @@ ALTER TABLE `alerts`
 -- AUTO_INCREMENT for table `deliveries`
 --
 ALTER TABLE `deliveries`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `departments`
+--
+ALTER TABLE `departments`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+
+--
+-- AUTO_INCREMENT for table `department_users`
+--
+ALTER TABLE `department_users`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `inventory_items`
 --
 ALTER TABLE `inventory_items`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
 -- AUTO_INCREMENT for table `po_items`
 --
 ALTER TABLE `po_items`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `purchase_orders`
 --
 ALTER TABLE `purchase_orders`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `roles`
@@ -605,19 +867,31 @@ ALTER TABLE `roles`
 -- AUTO_INCREMENT for table `stock_movements`
 --
 ALTER TABLE `stock_movements`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
+
+--
+-- AUTO_INCREMENT for table `stock_out_confirmations`
+--
+ALTER TABLE `stock_out_confirmations`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `stock_requests`
+--
+ALTER TABLE `stock_requests`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `suppliers`
 --
 ALTER TABLE `suppliers`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT for table `system_logs`
 --
 ALTER TABLE `system_logs`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=175;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=254;
 
 --
 -- AUTO_INCREMENT for table `users`
@@ -643,6 +917,18 @@ ALTER TABLE `deliveries`
   ADD CONSTRAINT `deliveries_ibfk_2` FOREIGN KEY (`received_by`) REFERENCES `users` (`id`);
 
 --
+-- Constraints for table `department_users`
+--
+ALTER TABLE `department_users`
+  ADD CONSTRAINT `department_users_ibfk_1` FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`);
+
+--
+-- Constraints for table `inventory_items`
+--
+ALTER TABLE `inventory_items`
+  ADD CONSTRAINT `inventory_items_ibfk_department` FOREIGN KEY (`default_department_id`) REFERENCES `departments` (`id`);
+
+--
 -- Constraints for table `po_items`
 --
 ALTER TABLE `po_items`
@@ -665,6 +951,22 @@ ALTER TABLE `stock_movements`
   ADD CONSTRAINT `stock_movements_ibfk_2` FOREIGN KEY (`performed_by`) REFERENCES `users` (`id`);
 
 --
+-- Constraints for table `stock_out_confirmations`
+--
+ALTER TABLE `stock_out_confirmations`
+  ADD CONSTRAINT `stock_out_confirmations_ibfk_1` FOREIGN KEY (`request_id`) REFERENCES `stock_requests` (`id`),
+  ADD CONSTRAINT `stock_out_confirmations_ibfk_2` FOREIGN KEY (`confirmed_by`) REFERENCES `department_users` (`id`);
+
+--
+-- Constraints for table `stock_requests`
+--
+ALTER TABLE `stock_requests`
+  ADD CONSTRAINT `stock_requests_ibfk_1` FOREIGN KEY (`item_id`) REFERENCES `inventory_items` (`id`),
+  ADD CONSTRAINT `stock_requests_ibfk_2` FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`),
+  ADD CONSTRAINT `stock_requests_ibfk_3` FOREIGN KEY (`requested_by`) REFERENCES `users` (`id`),
+  ADD CONSTRAINT `stock_requests_ibfk_4` FOREIGN KEY (`department_user_id`) REFERENCES `department_users` (`id`);
+
+--
 -- Constraints for table `system_logs`
 --
 ALTER TABLE `system_logs`
@@ -680,229 +982,3 @@ COMMIT;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
-
-
-ALTER TABLE purchase_orders 
-ADD COLUMN rejection_reason TEXT NULL AFTER notes,
-ADD COLUMN approved_at DATETIME NULL AFTER approved_by;
-
--- Add approved_at column if not exists
-ALTER TABLE purchase_orders 
-ADD COLUMN IF NOT EXISTS approved_at DATETIME NULL AFTER approved_by;
-
-
--- =====================================================
--- NEW TABLES FOR DEPARTMENT SYSTEM
--- =====================================================
-
--- 1. Departments table
-CREATE TABLE `departments` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `department_name` varchar(100) NOT NULL,
-  `department_code` varchar(20) NOT NULL,
-  `description` text DEFAULT NULL,
-  `status` enum('active','inactive') DEFAULT 'active',
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `department_code` (`department_code`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- Insert default departments
-INSERT INTO `departments` (`department_name`, `department_code`, `description`) VALUES
-('Restaurant', 'REST', 'Food and beverage service department'),
-('Bar', 'BAR', 'Drinks and beverages service'),
-('Housekeeping', 'HK', 'Room cleaning and maintenance'),
-('Kitchen', 'KITCH', 'Food preparation department'),
-('Laundry', 'LAUND', 'Linen and clothing cleaning'),
-('Maintenance', 'MAINT', 'Equipment and facility maintenance'),
-('Front Office', 'FO', 'Guest reception and check-in/out'),
-('Other', 'OTHER', 'Other departments');
-
--- 2. Department users table (staff who can confirm requests)
-CREATE TABLE `department_users` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `department_id` int(11) NOT NULL,
-  `fullname` varchar(100) NOT NULL,
-  `sex` enum('Male','Female','Other') DEFAULT NULL,
-  `email` varchar(100) NOT NULL,
-  `phone` varchar(20) NOT NULL,
-  `password` varchar(255) NOT NULL,
-  `employee_id` varchar(50) DEFAULT NULL,
-  `position` varchar(100) DEFAULT NULL,
-  `status` enum('active','inactive') DEFAULT 'active',
-  `profile_picture` varchar(255) DEFAULT NULL,
-  `last_login` datetime DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `email` (`email`),
-  UNIQUE KEY `employee_id` (`employee_id`),
-  KEY `department_id` (`department_id`),
-  CONSTRAINT `department_users_ibfk_1` FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- 3. Stock requests table (with QR code)
-CREATE TABLE `stock_requests` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `request_code` varchar(50) NOT NULL,
-  `item_id` int(11) NOT NULL,
-  `quantity` int(11) NOT NULL,
-  `department_id` int(11) NOT NULL,
-  `requested_by` int(11) NOT NULL COMMENT 'storekeeper who created request',
-  `department_user_id` int(11) DEFAULT NULL COMMENT 'department staff who confirmed',
-  `status` enum('pending','confirmed','cancelled','rejected') DEFAULT 'pending',
-  `qr_code` text NOT NULL,
-  `request_date` datetime NOT NULL,
-  `confirmed_at` datetime DEFAULT NULL,
-  `rejection_reason` text DEFAULT NULL,
-  `notes` text DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `request_code` (`request_code`),
-  KEY `item_id` (`item_id`),
-  KEY `department_id` (`department_id`),
-  KEY `requested_by` (`requested_by`),
-  KEY `department_user_id` (`department_user_id`),
-  CONSTRAINT `stock_requests_ibfk_1` FOREIGN KEY (`item_id`) REFERENCES `inventory_items` (`id`),
-  CONSTRAINT `stock_requests_ibfk_2` FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`),
-  CONSTRAINT `stock_requests_ibfk_3` FOREIGN KEY (`requested_by`) REFERENCES `users` (`id`),
-  CONSTRAINT `stock_requests_ibfk_4` FOREIGN KEY (`department_user_id`) REFERENCES `department_users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- 4. Stock out confirmations (final record after QR confirmation)
--- This replaces direct stock movement OUT entries
-CREATE TABLE `stock_out_confirmations` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `request_id` int(11) NOT NULL,
-  `confirmed_by` int(11) NOT NULL COMMENT 'department user id',
-  `confirmation_method` enum('qr_scan','manual') DEFAULT 'qr_scan',
-  `confirmed_at` datetime NOT NULL,
-  `ip_address` varchar(45) DEFAULT NULL,
-  `device_info` text DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  KEY `request_id` (`request_id`),
-  KEY `confirmed_by` (`confirmed_by`),
-  CONSTRAINT `stock_out_confirmations_ibfk_1` FOREIGN KEY (`request_id`) REFERENCES `stock_requests` (`id`),
-  CONSTRAINT `stock_out_confirmations_ibfk_2` FOREIGN KEY (`confirmed_by`) REFERENCES `department_users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- 5. Add department_id to inventory_items (optional, for default department)
-ALTER TABLE `inventory_items` 
-ADD COLUMN `default_department_id` int(11) NULL AFTER `location`,
-ADD KEY `default_department_id` (`default_department_id`),
-ADD CONSTRAINT `inventory_items_ibfk_department` FOREIGN KEY (`default_department_id`) REFERENCES `departments` (`id`);
-
--- 6. Create indexes for performance
-CREATE INDEX idx_stock_requests_status ON stock_requests(status);
-CREATE INDEX idx_stock_requests_request_code ON stock_requests(request_code);
-CREATE INDEX idx_stock_requests_created ON stock_requests(created_at);
-CREATE INDEX idx_department_users_email ON department_users(email);
-
--- =====================================================
--- NEW TABLES FOR DEPARTMENT SYSTEM
--- =====================================================
-
--- 1. Departments table
-CREATE TABLE `departments` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `department_name` varchar(100) NOT NULL,
-  `department_code` varchar(20) NOT NULL,
-  `description` text DEFAULT NULL,
-  `status` enum('active','inactive') DEFAULT 'active',
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `department_code` (`department_code`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- Insert default departments
-INSERT INTO `departments` (`department_name`, `department_code`, `description`) VALUES
-('Restaurant', 'REST', 'Food and beverage service department'),
-('Bar', 'BAR', 'Drinks and beverages service'),
-('Housekeeping', 'HK', 'Room cleaning and maintenance'),
-('Kitchen', 'KITCH', 'Food preparation department'),
-('Laundry', 'LAUND', 'Linen and clothing cleaning'),
-('Maintenance', 'MAINT', 'Equipment and facility maintenance'),
-('Front Office', 'FO', 'Guest reception and check-in/out'),
-('Other', 'OTHER', 'Other departments');
-
--- 2. Department users table (staff who can confirm requests)
-CREATE TABLE `department_users` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `department_id` int(11) NOT NULL,
-  `fullname` varchar(100) NOT NULL,
-  `sex` enum('Male','Female','Other') DEFAULT NULL,
-  `email` varchar(100) NOT NULL,
-  `phone` varchar(20) NOT NULL,
-  `password` varchar(255) NOT NULL,
-  `employee_id` varchar(50) DEFAULT NULL,
-  `position` varchar(100) DEFAULT NULL,
-  `status` enum('active','inactive') DEFAULT 'active',
-  `profile_picture` varchar(255) DEFAULT NULL,
-  `last_login` datetime DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `email` (`email`),
-  UNIQUE KEY `employee_id` (`employee_id`),
-  KEY `department_id` (`department_id`),
-  CONSTRAINT `department_users_ibfk_1` FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- 3. Stock requests table (with QR code)
-CREATE TABLE `stock_requests` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `request_code` varchar(50) NOT NULL,
-  `item_id` int(11) NOT NULL,
-  `quantity` int(11) NOT NULL,
-  `department_id` int(11) NOT NULL,
-  `requested_by` int(11) NOT NULL COMMENT 'storekeeper who created request',
-  `department_user_id` int(11) DEFAULT NULL COMMENT 'department staff who confirmed',
-  `status` enum('pending','confirmed','cancelled','rejected') DEFAULT 'pending',
-  `qr_code` text NOT NULL,
-  `request_date` datetime NOT NULL,
-  `confirmed_at` datetime DEFAULT NULL,
-  `rejection_reason` text DEFAULT NULL,
-  `notes` text DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `request_code` (`request_code`),
-  KEY `item_id` (`item_id`),
-  KEY `department_id` (`department_id`),
-  KEY `requested_by` (`requested_by`),
-  KEY `department_user_id` (`department_user_id`),
-  CONSTRAINT `stock_requests_ibfk_1` FOREIGN KEY (`item_id`) REFERENCES `inventory_items` (`id`),
-  CONSTRAINT `stock_requests_ibfk_2` FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`),
-  CONSTRAINT `stock_requests_ibfk_3` FOREIGN KEY (`requested_by`) REFERENCES `users` (`id`),
-  CONSTRAINT `stock_requests_ibfk_4` FOREIGN KEY (`department_user_id`) REFERENCES `department_users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- 4. Stock out confirmations (final record after QR confirmation)
--- This replaces direct stock movement OUT entries
-CREATE TABLE `stock_out_confirmations` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `request_id` int(11) NOT NULL,
-  `confirmed_by` int(11) NOT NULL COMMENT 'department user id',
-  `confirmation_method` enum('qr_scan','manual') DEFAULT 'qr_scan',
-  `confirmed_at` datetime NOT NULL,
-  `ip_address` varchar(45) DEFAULT NULL,
-  `device_info` text DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  KEY `request_id` (`request_id`),
-  KEY `confirmed_by` (`confirmed_by`),
-  CONSTRAINT `stock_out_confirmations_ibfk_1` FOREIGN KEY (`request_id`) REFERENCES `stock_requests` (`id`),
-  CONSTRAINT `stock_out_confirmations_ibfk_2` FOREIGN KEY (`confirmed_by`) REFERENCES `department_users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- 5. Add department_id to inventory_items (optional, for default department)
-ALTER TABLE `inventory_items` 
-ADD COLUMN `default_department_id` int(11) NULL AFTER `location`,
-ADD KEY `default_department_id` (`default_department_id`),
-ADD CONSTRAINT `inventory_items_ibfk_department` FOREIGN KEY (`default_department_id`) REFERENCES `departments` (`id`);
-
--- 6. Create indexes for performance
-CREATE INDEX idx_stock_requests_status ON stock_requests(status);
-CREATE INDEX idx_stock_requests_request_code ON stock_requests(request_code);
-CREATE INDEX idx_stock_requests_created ON stock_requests(created_at);
-CREATE INDEX idx_department_users_email ON department_users(email);

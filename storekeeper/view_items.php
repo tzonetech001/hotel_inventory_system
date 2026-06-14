@@ -9,6 +9,7 @@ checkAuth(['Storekeeper', 'Hotel Manager', 'Procurement Officer']);
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $search = $_GET['search'] ?? '';
 $category = $_GET['category'] ?? '';
+$department_filter = $_GET['department'] ?? '';
 $status_filter = $_GET['status'] ?? '';
 $sort = $_GET['sort'] ?? 'name';
 $order = $_GET['order'] ?? 'ASC';
@@ -24,6 +25,10 @@ if (!empty($search)) {
 if (!empty($category)) {
     $category_escaped = $db->real_escape_string($category);
     $where_conditions[] = "i.category = '$category_escaped'";
+}
+if (!empty($department_filter)) {
+    $department_escaped = $db->real_escape_string($department_filter);
+    $where_conditions[] = "i.department = '$department_escaped'";
 }
 if (!empty($status_filter)) {
     if ($status_filter == 'low_stock') {
@@ -41,6 +46,7 @@ $order_by = match($sort) {
     'stock' => 'i.current_stock',
     'price' => 'i.unit_price',
     'category' => 'i.category',
+    'department' => 'i.department',
     default => 'i.item_name'
 };
 $order_clause = "$order_by $order";
@@ -66,6 +72,10 @@ $items = $result->fetch_all(MYSQLI_ASSOC);
 $cat_result = $db->query("SELECT DISTINCT category FROM inventory_items WHERE category IS NOT NULL AND category != '' AND status != 'deleted'");
 $categories = $cat_result->fetch_all(MYSQLI_ASSOC);
 
+// Get unique departments for filter
+$dept_result = $db->query("SELECT DISTINCT department FROM inventory_items WHERE department IS NOT NULL AND department != '' AND status != 'deleted'");
+$departments = $dept_result->fetch_all(MYSQLI_ASSOC);
+
 // Get summary statistics
 $summary_sql = "SELECT 
                     COUNT(*) as total_items,
@@ -85,7 +95,7 @@ include '../templates/sidebar.php';
     <div class="page-header">
         <div>
             <h1><i class="fas fa-boxes"></i> Inventory Items</h1>
-            <p>View and manage all inventory items</p>
+            <p>View and manage all inventory items with department tracking</p>
         </div>
         <div class="header-actions">
             <a href="add_item.php" class="btn-primary">
@@ -152,6 +162,17 @@ include '../templates/sidebar.php';
                 </select>
             </div>
             <div class="filter-group">
+                <select name="department" class="filter-select">
+                    <option value="">All Departments</option>
+                    <?php foreach($departments as $dept): ?>
+                        <option value="<?php echo htmlspecialchars($dept['department']); ?>" <?php echo ($department_filter == $dept['department']) ? 'selected' : ''; ?>>
+                            <i class="fas <?php echo getDepartmentIcon($dept['department']); ?>"></i> 
+                            <?php echo htmlspecialchars($dept['department']); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="filter-group">
                 <select name="status" class="filter-select">
                     <option value="">All Status</option>
                     <option value="low_stock" <?php echo $status_filter == 'low_stock' ? 'selected' : ''; ?>>Low Stock</option>
@@ -165,6 +186,7 @@ include '../templates/sidebar.php';
                     <option value="stock" <?php echo $sort == 'stock' ? 'selected' : ''; ?>>Sort by Stock</option>
                     <option value="price" <?php echo $sort == 'price' ? 'selected' : ''; ?>>Sort by Price</option>
                     <option value="category" <?php echo $sort == 'category' ? 'selected' : ''; ?>>Sort by Category</option>
+                    <option value="department" <?php echo $sort == 'department' ? 'selected' : ''; ?>>Sort by Department</option>
                 </select>
             </div>
             <button type="submit" class="btn-filter">
@@ -202,6 +224,7 @@ include '../templates/sidebar.php';
                             <th>#</th>
                             <th>Item Name</th>
                             <th>Category</th>
+                            <th>Department</th>
                             <th>Current Stock</th>
                             <th>Unit</th>
                             <th>Min / Max</th>
@@ -233,6 +256,16 @@ include '../templates/sidebar.php';
                                     </td>
                                     <td>
                                         <span class="category-tag"><?php echo htmlspecialchars($item['category'] ?? '-'); ?></span>
+                                    </td>
+                                    <td>
+                                        <?php if(!empty($item['department'])): ?>
+                                            <span class="department-tag">
+                                                <i class="fas <?php echo getDepartmentIcon($item['department']); ?>"></i>
+                                                <?php echo htmlspecialchars($item['department']); ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="department-tag none">Not Assigned</span>
+                                        <?php endif; ?>
                                     </td>
                                     <td>
                                         <div class="stock-display">
@@ -284,8 +317,8 @@ include '../templates/sidebar.php';
                                             <a href="stock_in.php?item=<?php echo $item['id']; ?>" class="btn-icon stock-in" title="Stock In">
                                                 <i class="fas fa-arrow-down"></i>
                                             </a>
-                                            <a href="stock_out.php?item=<?php echo $item['id']; ?>" class="btn-icon stock-out" title="Stock Out">
-                                                <i class="fas fa-arrow-up"></i>
+                                            <a href="stock_out_request.php?item=<?php echo $item['id']; ?>" class="btn-icon stock-out" title="Stock Out Request">
+                                                <i class="fas fa-qrcode"></i>
                                             </a>
                                         </div>
                                     </td>
@@ -293,7 +326,7 @@ include '../templates/sidebar.php';
                             <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
-                                <td colspan="10" class="text-center">
+                                <td colspan="11" class="text-center">
                                     <div class="empty-state">
                                         <i class="fas fa-box-open"></i>
                                         <h4>No items found</h4>
@@ -317,10 +350,10 @@ include '../templates/sidebar.php';
                 </div>
                 <div class="pagination-links">
                     <?php if($page > 1): ?>
-                        <a href="?page=1&search=<?php echo urlencode($search); ?>&category=<?php echo urlencode($category); ?>&status=<?php echo urlencode($status_filter); ?>&sort=<?php echo $sort; ?>&order=<?php echo $order; ?>" class="page-link">
+                        <a href="?page=1&search=<?php echo urlencode($search); ?>&category=<?php echo urlencode($category); ?>&department=<?php echo urlencode($department_filter); ?>&status=<?php echo urlencode($status_filter); ?>&sort=<?php echo $sort; ?>&order=<?php echo $order; ?>" class="page-link">
                             <i class="fas fa-angle-double-left"></i>
                         </a>
-                        <a href="?page=<?php echo $page-1; ?>&search=<?php echo urlencode($search); ?>&category=<?php echo urlencode($category); ?>&status=<?php echo urlencode($status_filter); ?>&sort=<?php echo $sort; ?>&order=<?php echo $order; ?>" class="page-link">
+                        <a href="?page=<?php echo $page-1; ?>&search=<?php echo urlencode($search); ?>&category=<?php echo urlencode($category); ?>&department=<?php echo urlencode($department_filter); ?>&status=<?php echo urlencode($status_filter); ?>&sort=<?php echo $sort; ?>&order=<?php echo $order; ?>" class="page-link">
                             <i class="fas fa-angle-left"></i>
                         </a>
                     <?php endif; ?>
@@ -330,16 +363,16 @@ include '../templates/sidebar.php';
                     $end_page = min($total_pages, $page + 2);
                     for ($i = $start_page; $i <= $end_page; $i++):
                     ?>
-                        <a href="?page=<?php echo $i; ?>&search=<?php echo urlencode($search); ?>&category=<?php echo urlencode($category); ?>&status=<?php echo urlencode($status_filter); ?>&sort=<?php echo $sort; ?>&order=<?php echo $order; ?>" class="page-link <?php echo ($i == $page) ? 'active' : ''; ?>">
+                        <a href="?page=<?php echo $i; ?>&search=<?php echo urlencode($search); ?>&category=<?php echo urlencode($category); ?>&department=<?php echo urlencode($department_filter); ?>&status=<?php echo urlencode($status_filter); ?>&sort=<?php echo $sort; ?>&order=<?php echo $order; ?>" class="page-link <?php echo ($i == $page) ? 'active' : ''; ?>">
                             <?php echo $i; ?>
                         </a>
                     <?php endfor; ?>
                     
                     <?php if($page < $total_pages): ?>
-                        <a href="?page=<?php echo $page+1; ?>&search=<?php echo urlencode($search); ?>&category=<?php echo urlencode($category); ?>&status=<?php echo urlencode($status_filter); ?>&sort=<?php echo $sort; ?>&order=<?php echo $order; ?>" class="page-link">
+                        <a href="?page=<?php echo $page+1; ?>&search=<?php echo urlencode($search); ?>&category=<?php echo urlencode($category); ?>&department=<?php echo urlencode($department_filter); ?>&status=<?php echo urlencode($status_filter); ?>&sort=<?php echo $sort; ?>&order=<?php echo $order; ?>" class="page-link">
                             <i class="fas fa-angle-right"></i>
                         </a>
-                        <a href="?page=<?php echo $total_pages; ?>&search=<?php echo urlencode($search); ?>&category=<?php echo urlencode($category); ?>&status=<?php echo urlencode($status_filter); ?>&sort=<?php echo $sort; ?>&order=<?php echo $order; ?>" class="page-link">
+                        <a href="?page=<?php echo $total_pages; ?>&search=<?php echo urlencode($search); ?>&category=<?php echo urlencode($category); ?>&department=<?php echo urlencode($department_filter); ?>&status=<?php echo urlencode($status_filter); ?>&sort=<?php echo $sort; ?>&order=<?php echo $order; ?>" class="page-link">
                             <i class="fas fa-angle-double-right"></i>
                         </a>
                     <?php endif; ?>
@@ -377,6 +410,17 @@ include '../templates/sidebar.php';
         margin-bottom: 25px;
         flex-wrap: wrap;
         gap: 15px;
+    }
+    
+    .page-header h1 {
+        margin: 0;
+        font-size: 24px;
+        color: #1E3A8A;
+    }
+    
+    .page-header p {
+        margin: 5px 0 0;
+        color: #6B7280;
     }
     
     .header-actions .btn-primary {
@@ -504,6 +548,7 @@ include '../templates/sidebar.php';
         background: white;
         font-size: 14px;
         cursor: pointer;
+        min-width: 140px;
     }
     
     .btn-filter, .btn-clear {
@@ -560,7 +605,7 @@ include '../templates/sidebar.php';
         transform: translateY(-2px);
     }
     
-    /* Card Header */
+    /* Card */
     .card {
         background: white;
         border-radius: 16px;
@@ -664,6 +709,27 @@ include '../templates/sidebar.php';
         font-size: 12px;
         color: #374151;
         display: inline-block;
+    }
+    
+    /* Department Tag */
+    .department-tag {
+        background: #E0E7FF;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        color: #1E3A8A;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
+    
+    .department-tag.none {
+        background: #F3F4F6;
+        color: #9CA3AF;
+    }
+    
+    .department-tag i {
+        font-size: 11px;
     }
     
     /* Stock Display */
@@ -1061,6 +1127,15 @@ include '../templates/sidebar.php';
                         <div class="detail-value">${escapeHtml(data.category || '-')}</div>
                     </div>
                     <div class="detail-row">
+                        <div class="detail-label">Department:</div>
+                        <div class="detail-value">
+                            <span class="department-tag">
+                                <i class="fas ${getIconForDepartment(data.department)}"></i>
+                                ${escapeHtml(data.department || 'Not Assigned')}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="detail-row">
                         <div class="detail-label">Current Stock:</div>
                         <div class="detail-value">${formatNumber(data.current_stock)} ${escapeHtml(data.unit || '')}</div>
                     </div>
@@ -1140,6 +1215,20 @@ include '../templates/sidebar.php';
         return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
     }
     
+    function getIconForDepartment(department) {
+        const icons = {
+            'Kitchen': 'fa-utensils',
+            'Housekeeping': 'fa-broom',
+            'Laundry': 'fa-tshirt',
+            'Front Office': 'fa-hotel',
+            'Maintenance': 'fa-wrench',
+            'Restaurant': 'fa-utensil-spoon',
+            'Bar': 'fa-cocktail',
+            'Store': 'fa-warehouse'
+        };
+        return icons[department] || 'fa-building';
+    }
+    
     // Export functions
     function copyTable() {
         const table = document.getElementById('itemsTable');
@@ -1181,6 +1270,25 @@ include '../templates/sidebar.php';
         showToast('Exported to CSV successfully!', 'success');
     }
     
+    function showToast(message, type) {
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: ${type === 'error' ? '#EF4444' : '#10B981'};
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            z-index: 10000;
+            animation: fadeInUp 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        `;
+        toast.innerHTML = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+    
     // Close modal with Escape key
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape' && modal.style.display === 'flex') {
@@ -1209,5 +1317,22 @@ include '../templates/sidebar.php';
     `;
     document.head.appendChild(style);
 </script>
+
+<?php
+// Helper function for department icons
+function getDepartmentIcon($department) {
+    switch($department) {
+        case 'Kitchen': return 'fa-utensils';
+        case 'Housekeeping': return 'fa-broom';
+        case 'Laundry': return 'fa-tshirt';
+        case 'Front Office': return 'fa-hotel';
+        case 'Maintenance': return 'fa-wrench';
+        case 'Restaurant': return 'fa-utensil-spoon';
+        case 'Bar': return 'fa-cocktail';
+        case 'Store': return 'fa-warehouse';
+        default: return 'fa-building';
+    }
+}
+?>
 
 <?php include '../templates/footer.php'; ?>

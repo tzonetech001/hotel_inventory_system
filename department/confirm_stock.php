@@ -3,7 +3,6 @@ require_once '../includes/config.php';
 require_once '../includes/db_connection.php';
 require_once '../includes/functions.php';
 
-session_start();
 
 header('Content-Type: application/json');
 

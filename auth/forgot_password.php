@@ -6,79 +6,90 @@ require_once '../includes/functions.php';
 $step = $_GET['step'] ?? 1;
 $error = '';
 $success = '';
-$login_input = '';
+$email = '';
 $phone = '';
 
-// Step 1: Verify Identity (Username or Email)
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_identity'])) {
-    $login_input = trim($_POST['login_input']);
+// Step 1: Verify Email
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_email'])) {
+    $email = trim($_POST['email']);
     
-    if (empty($login_input)) {
-        $error = "Please enter your username or email address!";
+    if (empty($email)) {
+        $error = "Please enter your email address!";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error = "Please enter a valid email address!";
     } else {
-        // Check if input is email (contains @)
-        if (filter_var($login_input, FILTER_VALIDATE_EMAIL)) {
-            // It's an email - check both tables
-            // First check suppliers table
+        $user_found = false;
+        
+        // 1. Check department_users table
+        $sql = "SELECT id, fullname, phone, 'department' as user_type FROM department_users WHERE email = ? AND status = 'active'";
+        $stmt = $db->prepare($sql);
+        $stmt->bind_param("s", $email);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $user = $result->fetch_assoc();
+        
+        if ($user) {
+            $_SESSION['reset_user_id'] = $user['id'];
+            $_SESSION['reset_email'] = $email;
+            $_SESSION['reset_fullname'] = $user['fullname'];
+            $_SESSION['reset_phone'] = $user['phone'];
+            $_SESSION['reset_user_type'] = 'department';
+            $user_found = true;
+        }
+        
+        // 2. Check suppliers table
+        if (!$user_found) {
             $sql = "SELECT id, company_name, contact_person, phone, 'supplier' as user_type FROM suppliers WHERE email = ? AND status = 'active'";
             $stmt = $db->prepare($sql);
-            $stmt->bind_param("s", $login_input);
+            $stmt->bind_param("s", $email);
             $stmt->execute();
             $result = $stmt->get_result();
             $user = $result->fetch_assoc();
             
-            if (!$user) {
-                // Check users table
-                $sql = "SELECT id, fullname, username, phone, 'staff' as user_type FROM users WHERE email = ? AND status = 'active'";
-                $stmt = $db->prepare($sql);
-                $stmt->bind_param("s", $login_input);
-                $stmt->execute();
-                $result = $stmt->get_result();
-                $user = $result->fetch_assoc();
-            }
-            
             if ($user) {
                 $_SESSION['reset_user_id'] = $user['id'];
-                $_SESSION['reset_login_input'] = $login_input;
-                $_SESSION['reset_fullname'] = $user['user_type'] == 'supplier' ? ($user['contact_person'] ?? $user['company_name']) : $user['fullname'];
+                $_SESSION['reset_email'] = $email;
+                $_SESSION['reset_fullname'] = $user['contact_person'] ?? $user['company_name'];
                 $_SESSION['reset_phone'] = $user['phone'];
-                $_SESSION['reset_user_type'] = $user['user_type'];
-                
-                header("Location: forgot_password.php?step=2");
-                exit();
-            } else {
-                $error = "No account found with that email address!";
+                $_SESSION['reset_user_type'] = 'supplier';
+                $user_found = true;
             }
-        } else {
-            // It's a username - check users table only
-            $sql = "SELECT id, fullname, username, phone, 'staff' as user_type FROM users WHERE username = ? AND status = 'active'";
+        }
+        
+        // 3. Check users table (staff)
+        if (!$user_found) {
+            $sql = "SELECT id, fullname, phone, 'staff' as user_type FROM users WHERE email = ? AND status = 'active'";
             $stmt = $db->prepare($sql);
-            $stmt->bind_param("s", $login_input);
+            $stmt->bind_param("s", $email);
             $stmt->execute();
             $result = $stmt->get_result();
             $user = $result->fetch_assoc();
             
             if ($user) {
                 $_SESSION['reset_user_id'] = $user['id'];
-                $_SESSION['reset_login_input'] = $login_input;
+                $_SESSION['reset_email'] = $email;
                 $_SESSION['reset_fullname'] = $user['fullname'];
                 $_SESSION['reset_phone'] = $user['phone'];
                 $_SESSION['reset_user_type'] = 'staff';
-                
-                header("Location: forgot_password.php?step=2");
-                exit();
-            } else {
-                $error = "No account found with that username!";
+                $user_found = true;
             }
+        }
+        
+        if ($user_found) {
+            header("Location: forgot_password.php?step=2");
+            exit();
+        } else {
+            $error = "No account found with that email address!";
         }
     }
 }
 
-// Step 2: Verify Phone
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_phone'])) {
+// Step 2: Verify Phone and Reset Password Directly
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
     $phone = trim($_POST['phone']);
     $expected_phone = $_SESSION['reset_phone'] ?? '';
-    $user_type = $_SESSION['reset_user_type'] ?? 'staff';
+    $password = $_POST['password'];
+    $confirm_password = $_POST['confirm_password'];
     
     // Remove any formatting from phone number for comparison
     $phone_clean = preg_replace('/[^0-9]/', '', $phone);
@@ -88,131 +99,60 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_phone'])) {
         $error = "Please enter your phone number!";
     } elseif ($phone_clean !== $expected_clean) {
         $error = "Phone number does not match our records!";
-    } else {
-        // Generate reset token
-        $reset_token = bin2hex(random_bytes(32));
-        $reset_expires = date('Y-m-d H:i:s', strtotime('+1 hour'));
-        
-        if ($user_type == 'staff') {
-            $sql = "UPDATE users SET reset_token = ?, reset_expires = ? WHERE id = ?";
-        } else {
-            $sql = "UPDATE suppliers SET reset_token = ?, reset_expires = ? WHERE id = ?";
-        }
-        
-        $stmt = $db->prepare($sql);
-        $stmt->bind_param("ssi", $reset_token, $reset_expires, $_SESSION['reset_user_id']);
-        $stmt->execute();
-        
-        $_SESSION['reset_token'] = $reset_token;
-        
-        header("Location: forgot_password.php?step=3&token=" . $reset_token);
-        exit();
-    }
-}
-
-// Step 3: Reset Password
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password'])) {
-    $token = $_GET['token'] ?? $_POST['token'] ?? '';
-    $user_type = $_SESSION['reset_user_type'] ?? 'staff';
-    $password = $_POST['password'];
-    $confirm_password = $_POST['confirm_password'];
-    
-    if (empty($password) || empty($confirm_password)) {
-        $error = "Please fill all fields!";
+    } elseif (empty($password) || empty($confirm_password)) {
+        $error = "Please enter new password!";
     } elseif ($password !== $confirm_password) {
         $error = "Passwords do not match!";
     } elseif (strlen($password) < 6) {
         $error = "Password must be at least 6 characters!";
     } else {
-        // Verify token
+        $user_type = $_SESSION['reset_user_type'] ?? 'staff';
+        $user_id = $_SESSION['reset_user_id'];
+        $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+        
         if ($user_type == 'staff') {
-            $sql = "SELECT id FROM users WHERE reset_token = ? AND reset_expires > NOW() AND status = 'active'";
+            $sql = "UPDATE users SET password = ? WHERE id = ?";
+        } elseif ($user_type == 'supplier') {
+            $sql = "UPDATE suppliers SET password = ? WHERE id = ?";
         } else {
-            $sql = "SELECT id FROM suppliers WHERE reset_token = ? AND reset_expires > NOW() AND status = 'active'";
+            $sql = "UPDATE department_users SET password = ? WHERE id = ?";
         }
         
         $stmt = $db->prepare($sql);
-        $stmt->bind_param("s", $token);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $user = $result->fetch_assoc();
+        $stmt->bind_param("si", $hashed_password, $user_id);
         
-        if ($user) {
-            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-            
+        if ($stmt->execute()) {
+            // Log the password reset
             if ($user_type == 'staff') {
-                $sql = "UPDATE users SET password = ?, reset_token = NULL, reset_expires = NULL WHERE id = ?";
+                logActivity($user_id, 'Password Reset', 'Password reset via forgot password');
+            } elseif ($user_type == 'supplier') {
+                logActivity(0, 'Supplier Password Reset', "Password reset for supplier ID: {$user_id}", 'supplier');
             } else {
-                $sql = "UPDATE suppliers SET password = ?, reset_token = NULL, reset_expires = NULL WHERE id = ?";
+                logActivity(0, 'Department Password Reset', "Password reset for department user ID: {$user_id}", 'department');
             }
             
-            $stmt = $db->prepare($sql);
-            $stmt->bind_param("si", $hashed_password, $user['id']);
+            // Clear session
+            unset($_SESSION['reset_user_id']);
+            unset($_SESSION['reset_email']);
+            unset($_SESSION['reset_fullname']);
+            unset($_SESSION['reset_phone']);
+            unset($_SESSION['reset_user_type']);
             
-            if ($stmt->execute()) {
-                // Log the password reset
-                if ($user_type == 'staff') {
-                    logActivity($user['id'], 'Password Reset', 'Password reset via forgot password');
-                } else {
-                    logActivity(0, 'Supplier Password Reset', "Password reset for supplier ID: {$user['id']}", 'supplier');
-                }
-                
-                // Clear reset session
-                unset($_SESSION['reset_user_id']);
-                unset($_SESSION['reset_login_input']);
-                unset($_SESSION['reset_fullname']);
-                unset($_SESSION['reset_phone']);
-                unset($_SESSION['reset_token']);
-                unset($_SESSION['reset_user_type']);
-                
-                $success = "Password reset successfully! You can now login with your new password.";
-                
-                // Redirect to login after 3 seconds
-                header("refresh:3;url=login.php");
-            } else {
-                $error = "Error resetting password. Please try again!";
-            }
+            $_SESSION['toast_message'] = "Password reset successfully! Please login with your new password.";
+            $_SESSION['toast_type'] = "success";
+            
+            header("Location: login.php");
+            exit();
         } else {
-            $error = "Invalid or expired reset link! Please restart the process.";
+            $error = "Error resetting password. Please try again!";
         }
     }
 }
 
-// Check if token is valid for step 3
-if ($step == 3) {
-    $token = $_GET['token'] ?? '';
-    if (empty($token)) {
-        header("Location: forgot_password.php");
-        exit();
-    }
-    
-    // Verify token in both tables
-    $sql_users = "SELECT id, fullname FROM users WHERE reset_token = ? AND reset_expires > NOW() AND status = 'active'";
-    $stmt = $db->prepare($sql_users);
-    $stmt->bind_param("s", $token);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $user = $result->fetch_assoc();
-    
-    if ($user) {
-        $_SESSION['reset_fullname'] = $user['fullname'];
-        $_SESSION['reset_user_type'] = 'staff';
-    } else {
-        $sql_suppliers = "SELECT id, company_name, contact_person FROM suppliers WHERE reset_token = ? AND reset_expires > NOW() AND status = 'active'";
-        $stmt = $db->prepare($sql_suppliers);
-        $stmt->bind_param("s", $token);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $supplier = $result->fetch_assoc();
-        
-        if ($supplier) {
-            $_SESSION['reset_fullname'] = $supplier['contact_person'] ?? $supplier['company_name'];
-            $_SESSION['reset_user_type'] = 'supplier';
-        } else {
-            header("Location: forgot_password.php");
-            exit();
-        }
-    }
+// Check if we have user data for step 2
+if ($step == 2 && empty($_SESSION['reset_user_id'])) {
+    header("Location: forgot_password.php");
+    exit();
 }
 ?>
 <!DOCTYPE html>
@@ -295,8 +235,8 @@ if ($step == 3) {
             content: '';
             position: absolute;
             top: 20px;
-            left: 15%;
-            right: 15%;
+            left: 25%;
+            right: 25%;
             height: 2px;
             background: #E5E7EB;
             z-index: 1;
@@ -365,6 +305,10 @@ if ($step == 3) {
         .form-group label i {
             margin-right: 8px;
             color: #1E3A8A;
+        }
+        
+        .required {
+            color: #EF4444;
         }
         
         .input-wrapper {
@@ -522,19 +466,6 @@ if ($step == 3) {
             gap: 10px;
         }
         
-        .success-message {
-            background: #ECFDF5;
-            color: #065F46;
-            padding: 14px;
-            border-radius: 12px;
-            margin-bottom: 24px;
-            font-size: 14px;
-            border-left: 4px solid #10B981;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
         .info-box {
             background: #EFF6FF;
             border-left: 4px solid #1E3A8A;
@@ -577,22 +508,18 @@ if ($step == 3) {
                 <i class="fas fa-key"></i>
             </div>
             <h1>Reset Password</h1>
-            <p>Follow the steps to reset your password</p>
+            <p>Reset your password in two simple steps</p>
         </div>
         
         <!-- Step Indicator -->
         <div class="step-indicator">
             <div class="step <?php echo $step >= 1 ? 'active' : ''; ?> <?php echo $step > 1 ? 'completed' : ''; ?>">
                 <div class="step-number">1</div>
-                <div class="step-label">Verify</div>
+                <div class="step-label">Email</div>
             </div>
-            <div class="step <?php echo $step >= 2 ? 'active' : ''; ?> <?php echo $step > 2 ? 'completed' : ''; ?>">
+            <div class="step <?php echo $step >= 2 ? 'active' : ''; ?>">
                 <div class="step-number">2</div>
-                <div class="step-label">Phone</div>
-            </div>
-            <div class="step <?php echo $step >= 3 ? 'active' : ''; ?>">
-                <div class="step-number">3</div>
-                <div class="step-label">New Password</div>
+                <div class="step-label">Reset</div>
             </div>
         </div>
         
@@ -603,32 +530,22 @@ if ($step == 3) {
             </div>
         <?php endif; ?>
         
-        <?php if($success): ?>
-            <div class="success-message">
-                <i class="fas fa-check-circle"></i>
-                <span><?php echo $success; ?></span>
-            </div>
-            <a href="login.php" class="btn-submit" style="text-align: center; text-decoration: none; display: block; background: #10B981;">
-                <i class="fas fa-sign-in-alt"></i> Go to Login
-            </a>
-        <?php endif; ?>
-        
-        <!-- Step 1: Identity Form (Username or Email) -->
-        <?php if($step == 1 && !$success): ?>
+        <!-- Step 1: Identity Form (Email only) -->
+        <?php if($step == 1): ?>
         <form method="POST" action="">
             <div class="form-group">
-                <label><i class="fas fa-user-circle"></i> Username or Email</label>
+                <label><i class="fas fa-envelope"></i> Email Address <span class="required">*</span></label>
                 <div class="input-wrapper">
-                    <input type="text" name="login_input" placeholder="Enter your username or email" 
-                           value="<?php echo htmlspecialchars($login_input); ?>" required autofocus>
+                    <input type="email" name="email" placeholder="Enter your registered email" 
+                           value="<?php echo htmlspecialchars($email); ?>" required autofocus>
                 </div>
                 <small style="color: #6B7280; font-size: 12px; display: block; margin-top: 6px;">
-                    <i class="fas fa-info-circle"></i> Enter the username or email you use to login
+                    <i class="fas fa-info-circle"></i> Enter the email address you used to register
                 </small>
             </div>
             
-            <button type="submit" name="verify_identity" class="btn-submit">
-                <i class="fas fa-arrow-right"></i> Verify Identity
+            <button type="submit" name="verify_email" class="btn-submit">
+                <i class="fas fa-arrow-right"></i> Continue
             </button>
             
             <a href="login.php" class="btn-back">
@@ -637,16 +554,16 @@ if ($step == 3) {
         </form>
         <?php endif; ?>
         
-        <!-- Step 2: Phone Verification -->
-        <?php if($step == 2 && !$success): ?>
+        <!-- Step 2: Verify Phone and Reset Password -->
+        <?php if($step == 2): ?>
         <div class="info-box">
-            <i class="fas fa-shield-alt"></i>
-            <span>For security, please verify your identity with your registered phone number.</span>
+            <i class="fas fa-user-check"></i>
+            <span>Hello <strong><?php echo htmlspecialchars($_SESSION['reset_fullname'] ?? ''); ?></strong>, please verify your phone and set new password.</span>
         </div>
         
         <form method="POST" action="">
             <div class="form-group">
-                <label><i class="fas fa-phone-alt"></i> Phone Number</label>
+                <label><i class="fas fa-phone-alt"></i> Phone Number <span class="required">*</span></label>
                 <div class="input-wrapper">
                     <input type="tel" name="phone" placeholder="Enter your registered phone number" 
                            value="<?php echo htmlspecialchars($phone); ?>" required autofocus>
@@ -656,33 +573,13 @@ if ($step == 3) {
                 </small>
             </div>
             
-            <button type="submit" name="verify_phone" class="btn-submit">
-                <i class="fas fa-check-circle"></i> Verify Phone
-            </button>
-            
-            <a href="forgot_password.php?step=1" class="btn-back">
-                <i class="fas fa-arrow-left"></i> Back
-            </a>
-        </form>
-        <?php endif; ?>
-        
-        <!-- Step 3: Reset Password -->
-        <?php if($step == 3 && !$success): ?>
-        <div class="info-box">
-            <i class="fas fa-user-check"></i>
-            <span>Hello <strong><?php echo htmlspecialchars($_SESSION['reset_fullname'] ?? ''); ?></strong>, please create your new password.</span>
-        </div>
-        
-        <form method="POST" action="">
-            <input type="hidden" name="token" value="<?php echo htmlspecialchars($token); ?>">
-            
             <div class="form-group">
-                <label><i class="fas fa-lock"></i> New Password</label>
+                <label><i class="fas fa-lock"></i> New Password <span class="required">*</span></label>
                 <div class="password-wrapper">
                     <input type="password" name="password" id="password" placeholder="Enter new password" required>
                     <i class="fas fa-eye toggle-password" id="togglePassword1"></i>
                 </div>
-                <div class="password-strength" id="passwordStrength">
+                <div class="password-strength">
                     <div class="strength-bar">
                         <div class="strength-bar-fill" id="strengthFill"></div>
                     </div>
@@ -692,7 +589,7 @@ if ($step == 3) {
             </div>
             
             <div class="form-group">
-                <label><i class="fas fa-lock"></i> Confirm Password</label>
+                <label><i class="fas fa-lock"></i> Confirm Password <span class="required">*</span></label>
                 <div class="password-wrapper">
                     <input type="password" name="confirm_password" id="confirm_password" placeholder="Confirm new password" required>
                     <i class="fas fa-eye toggle-password" id="togglePassword2"></i>
@@ -704,8 +601,8 @@ if ($step == 3) {
                 <i class="fas fa-save"></i> Reset Password
             </button>
             
-            <a href="login.php" class="btn-back">
-                <i class="fas fa-arrow-left"></i> Back to Login
+            <a href="forgot_password.php?step=1" class="btn-back">
+                <i class="fas fa-arrow-left"></i> Back
             </a>
         </form>
         <?php endif; ?>
@@ -810,7 +707,7 @@ if ($step == 3) {
         }
         
         // Form submit loading state
-        const resetForm = document.querySelector('form[action=""][method="POST"]');
+        const resetForm = document.querySelector('form[method="POST"]');
         const resetBtn = document.getElementById('resetBtn');
         
         if (resetForm && resetBtn) {

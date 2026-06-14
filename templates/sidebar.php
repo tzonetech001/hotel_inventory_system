@@ -30,10 +30,12 @@
                 <li class="<?php echo ($current_page == 'view_users.php') ? 'active' : ''; ?>">
                     <a href="<?php echo APP_URL; ?>/admin/view_users.php"><i class="fas fa-users"></i> <span>View Users</span></a>
                 </li>
+                 <li><a href="<?php echo APP_URL; ?>/manager/suppliers.php"><i class="fas fa-truck"></i> <span>Suppliers</span></a></li>
+                  <li><a href="<?php echo APP_URL; ?>/department/view_department_users.php"><i class="fas fa-tags"></i> <span>Departments</span></a></li>
                 <li class="menu-divider"></li>
                 <li class="menu-header">System</li>
                 <li><a href="<?php echo APP_URL; ?>/manager/reports.php"><i class="fas fa-chart-line"></i> <span>Reports</span></a></li>
-                <li><a href="<?php echo APP_URL; ?>/manager/suppliers.php"><i class="fas fa-truck"></i> <span>Suppliers</span></a></li>
+               
                 <?php
                 break;
                 
@@ -44,6 +46,10 @@
                 <li class="<?php echo ($current_page == 'manage_users.php') ? 'active' : ''; ?>">
                     <a href="<?php echo APP_URL; ?>/manager/manage_users.php"><i class="fas fa-users-gear"></i> <span>User Management</span></a>
                 </li>
+                <li class="<?php echo ($current_page == 'suppliers.php') ? 'active' : ''; ?>">
+                    <a href="<?php echo APP_URL; ?>/manager/suppliers.php"><i class="fas fa-truck"></i> <span>Suppliers</span></a>
+                </li>
+                 <li><a href="<?php echo APP_URL; ?>/department/view_department_users.php"><i class="fas fa-tags"></i> <span>Departments</span></a></li>
                 <li class="<?php echo ($current_page == 'reports.php') ? 'active' : ''; ?>">
                     <a href="<?php echo APP_URL; ?>/manager/reports.php"><i class="fas fa-chart-line"></i> <span>Reports</span></a>
                 </li>
@@ -53,9 +59,7 @@
                 <li class="<?php echo ($current_page == 'view_po.php') ? 'active' : ''; ?>">
                     <a href="<?php echo APP_URL; ?>/procurement/view_po.php"><i class="fas fa-list"></i> <span>View PO</span></a>
                 </li>
-                <li class="<?php echo ($current_page == 'suppliers.php') ? 'active' : ''; ?>">
-                    <a href="<?php echo APP_URL; ?>/manager/suppliers.php"><i class="fas fa-truck"></i> <span>Suppliers</span></a>
-                </li>
+                
                 <li><a href="<?php echo APP_URL; ?>/storekeeper/view_items.php"><i class="fas fa-boxes"></i> <span>Inventory</span></a></li>
                 <?php
                 break;

@@ -15,8 +15,8 @@ $departments_sql = "SELECT id, department_name, department_code FROM departments
 $departments_result = $db->query($departments_sql);
 $departments = $departments_result->fetch_all(MYSQLI_ASSOC);
 
-// Get active items with stock > 0
-$items_sql = "SELECT id, item_name, unit, current_stock, default_department_id 
+// Get active items with stock > 0 - include department from inventory_items
+$items_sql = "SELECT id, item_name, unit, current_stock, department 
               FROM inventory_items 
               WHERE status = 'active' AND current_stock > 0 
               ORDER BY item_name";
@@ -90,7 +90,7 @@ include '../templates/sidebar.php';
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-qrcode"></i> Stock Out Request</h1>
-        <p>Create request for department to confirm via QR code scan</p>
+        <p>Create request for department to confirm via QR code scan - Department auto-fills from item</p>
     </div>
     
     <div class="two-column-layout">
@@ -99,7 +99,7 @@ include '../templates/sidebar.php';
             <div class="card animate-card">
                 <div class="card-header">
                     <h3><i class="fas fa-clipboard-list"></i> Create Stock Request</h3>
-                    <p class="card-subtitle">Select item, quantity, and department</p>
+                    <p class="card-subtitle">Select item - department auto-fills, but you can change it</p>
                 </div>
                 <div class="card-body">
                     <form method="POST" action="" id="stockRequestForm">
@@ -113,13 +113,17 @@ include '../templates/sidebar.php';
                                     <option value="<?php echo $item['id']; ?>" 
                                             data-current="<?php echo $item['current_stock']; ?>"
                                             data-unit="<?php echo $item['unit']; ?>"
-                                            data-default-dept="<?php echo $item['default_department_id']; ?>"
+                                            data-department="<?php echo htmlspecialchars($item['department'] ?? ''); ?>"
                                             <?php echo ($selected_item == $item['id']) ? 'selected' : ''; ?>>
                                         <?php echo htmlspecialchars($item['item_name']); ?> 
                                         (Available: <?php echo $item['current_stock']; ?> <?php echo $item['unit']; ?>)
+                                        <?php if(!empty($item['department'])): ?>
+                                            - Dept: <?php echo htmlspecialchars($item['department']); ?>
+                                        <?php endif; ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
+                            <small>Department will auto-fill from item's default department</small>
                         </div>
                         
                         <div class="form-group">
@@ -127,13 +131,12 @@ include '../templates/sidebar.php';
                             <select name="department_id" id="department_id" required>
                                 <option value="">-- Select Department --</option>
                                 <?php foreach($departments as $dept): ?>
-                                    <option value="<?php echo $dept['id']; ?>" data-code="<?php echo $dept['department_code']; ?>">
-                                        <i class="fas fa-<?php echo strtolower($dept['department_code']); ?>"></i>
+                                    <option value="<?php echo $dept['id']; ?>" data-code="<?php echo $dept['department_code']; ?>" data-name="<?php echo htmlspecialchars($dept['department_name']); ?>">
                                         <?php echo htmlspecialchars($dept['department_name']); ?> (<?php echo $dept['department_code']; ?>)
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            <small>This department will confirm the stock out via QR code</small>
+                            <small id="deptAutoFillNote" class="auto-fill-note"></small>
                         </div>
                         
                         <div class="form-row">
@@ -193,11 +196,29 @@ include '../templates/sidebar.php';
                 </div>
                 <div class="card-body">
                     <ul class="tips-list">
-                        <li><i class="fas fa-qrcode"></i> <strong>1. Create Request</strong> - Select item and department</li>
+                        <li><i class="fas fa-magic"></i> <strong>Auto Department</strong> - Department auto-fills from item</li>
+                        <li><i class="fas fa-qrcode"></i> <strong>1. Create Request</strong> - Select item and quantity</li>
                         <li><i class="fas fa-print"></i> <strong>2. Print/Save QR</strong> - Give QR to department staff</li>
                         <li><i class="fas fa-camera"></i> <strong>3. Scan to Confirm</strong> - Department scans QR code</li>
                         <li><i class="fas fa-check-circle"></i> <strong>4. Auto Deduct</strong> - Stock automatically updates</li>
                     </ul>
+                </div>
+            </div>
+            
+            <div class="card departments-card animate-card-delayed">
+                <div class="card-header">
+                    <h3><i class="fas fa-building"></i> Hotel Departments</h3>
+                </div>
+                <div class="card-body">
+                    <div class="department-badges">
+                        <?php foreach($departments as $dept): ?>
+                            <span class="department-badge" data-dept-id="<?php echo $dept['id']; ?>" data-dept-name="<?php echo htmlspecialchars($dept['department_name']); ?>">
+                                <i class="fas fa-<?php echo strtolower($dept['department_code']); ?>"></i>
+                                <?php echo htmlspecialchars($dept['department_name']); ?>
+                            </span>
+                        <?php endforeach; ?>
+                    </div>
+                    <small class="dept-note">Click on any department to manually change selection</small>
                 </div>
             </div>
             
@@ -358,6 +379,11 @@ include '../templates/sidebar.php';
         color: #6B7280;
     }
     
+    .auto-fill-note {
+        color: #10B981 !important;
+        font-weight: 500;
+    }
+    
     .form-row {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -491,6 +517,43 @@ include '../templates/sidebar.php';
         width: 24px;
     }
     
+    /* Department Badges */
+    .department-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+    
+    .department-badge {
+        background: #F3F4F6;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 11px;
+        color: #374151;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    
+    .department-badge:hover {
+        background: #1E3A8A;
+        color: white;
+    }
+    
+    .department-badge:hover i {
+        color: white;
+    }
+    
+    .dept-note {
+        font-size: 10px;
+        color: #9CA3AF;
+        display: block;
+        text-align: center;
+    }
+    
     .pending-list {
         max-height: 300px;
         overflow-y: auto;
@@ -558,6 +621,16 @@ include '../templates/sidebar.php';
         font-size: 13px;
     }
     
+    /* Highlight animation */
+    @keyframes highlightFlash {
+        0% { background-color: #D1FAE5; border-color: #10B981; }
+        100% { background-color: white; border-color: #E5E7EB; }
+    }
+    
+    .highlight {
+        animation: highlightFlash 0.5s ease;
+    }
+    
     @media (max-width: 900px) {
         .two-column-layout {
             grid-template-columns: 1fr;
@@ -574,6 +647,7 @@ include '../templates/sidebar.php';
 </style>
 
 <script>
+    // DOM Elements
     const itemSelect = document.getElementById('item_id');
     const departmentSelect = document.getElementById('department_id');
     const quantityInput = document.getElementById('quantity');
@@ -582,6 +656,13 @@ include '../templates/sidebar.php';
     const warningBox = document.getElementById('warningBox');
     const warningMessage = document.getElementById('warningMessage');
     const submitBtn = document.getElementById('submitBtn');
+    const deptAutoFillNote = document.getElementById('deptAutoFillNote');
+    
+    // Store department mapping for auto-fill by name
+    const departmentMap = {};
+    <?php foreach($departments as $dept): ?>
+        departmentMap['<?php echo addslashes($dept['department_name']); ?>'] = <?php echo $dept['id']; ?>;
+    <?php endforeach; ?>
     
     function calculateRemaining() {
         const selectedOption = itemSelect.options[itemSelect.selectedIndex];
@@ -590,7 +671,6 @@ include '../templates/sidebar.php';
         if (selectedOption.value) {
             const currentStock = parseInt(selectedOption.dataset.current) || 0;
             const unit = selectedOption.dataset.unit || '';
-            const itemName = selectedOption.text.split('(')[0].trim();
             const remaining = currentStock - quantity;
             
             remainingStockValue.textContent = remaining >= 0 ? remaining : 0;
@@ -598,7 +678,7 @@ include '../templates/sidebar.php';
             
             if (quantity > currentStock) {
                 warningBox.style.display = 'flex';
-                warningMessage.innerHTML = `⚠️ Insufficient stock! Only ${currentStock} ${unit} of ${itemName} available.`;
+                warningMessage.innerHTML = `⚠️ Insufficient stock! Only ${currentStock} ${unit} available.`;
                 submitBtn.disabled = true;
                 submitBtn.style.opacity = '0.5';
                 remainingStockValue.style.color = '#EF4444';
@@ -615,19 +695,80 @@ include '../templates/sidebar.php';
         }
     }
     
-    // Auto-select department if item has default department
+    // Auto-select department based on item's default department
+    function autoSelectDepartment(itemDepartmentName) {
+        if (itemDepartmentName && departmentMap[itemDepartmentName]) {
+            const deptId = departmentMap[itemDepartmentName];
+            departmentSelect.value = deptId;
+            deptAutoFillNote.innerHTML = `<i class="fas fa-magic"></i> Auto-filled: ${itemDepartmentName}`;
+            deptAutoFillNote.style.color = '#10B981';
+            
+            // Highlight the department select to show change
+            departmentSelect.classList.add('highlight');
+            setTimeout(() => {
+                departmentSelect.classList.remove('highlight');
+            }, 500);
+        } else if (itemDepartmentName) {
+            deptAutoFillNote.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Department "${itemDepartmentName}" not found. Please select manually.`;
+            deptAutoFillNote.style.color = '#F59E0B';
+            departmentSelect.value = '';
+        } else {
+            deptAutoFillNote.innerHTML = `<i class="fas fa-info-circle"></i> No default department. Select manually.`;
+            deptAutoFillNote.style.color = '#6B7280';
+            departmentSelect.value = '';
+        }
+    }
+    
+    // When item changes
     itemSelect.addEventListener('change', function() {
         const selectedOption = this.options[this.selectedIndex];
-        const defaultDept = selectedOption.dataset.defaultDept;
+        const itemDepartment = selectedOption.dataset.department || '';
         
-        if (defaultDept && defaultDept != '') {
-            departmentSelect.value = defaultDept;
-        }
+        // Auto-select department from item's default department
+        autoSelectDepartment(itemDepartment);
         
+        // Calculate remaining stock
         calculateRemaining();
+        
+        // Focus on quantity input
+        quantityInput.focus();
     });
     
+    // Quantity input listener
     quantityInput.addEventListener('input', calculateRemaining);
+    
+    // Department badge click to select department
+    document.querySelectorAll('.department-badge').forEach(badge => {
+        badge.addEventListener('click', function() {
+            const deptId = this.getAttribute('data-dept-id');
+            const deptName = this.getAttribute('data-dept-name');
+            
+            departmentSelect.value = deptId;
+            
+            // Update note
+            deptAutoFillNote.innerHTML = `<i class="fas fa-check-circle"></i> Manually selected: ${deptName}`;
+            deptAutoFillNote.style.color = '#1E3A8A';
+            
+            // Highlight effect
+            departmentSelect.classList.add('highlight');
+            setTimeout(() => {
+                departmentSelect.classList.remove('highlight');
+            }, 500);
+        });
+    });
+    
+    // Reset button
+    const resetBtn = document.getElementById('resetBtn');
+    resetBtn.addEventListener('click', function() {
+        setTimeout(() => {
+            if (itemSelect.value) {
+                const selectedOption = itemSelect.options[itemSelect.selectedIndex];
+                const itemDepartment = selectedOption.dataset.department || '';
+                autoSelectDepartment(itemDepartment);
+                calculateRemaining();
+            }
+        }, 100);
+    });
     
     // Form validation
     const form = document.getElementById('stockRequestForm');
@@ -687,11 +828,16 @@ include '../templates/sidebar.php';
         setTimeout(() => toast.remove(), 3000);
     }
     
-    // Pre-select from URL
+    // Pre-select from URL and auto-fill department
     <?php if($selected_item > 0): ?>
-        itemSelect.value = <?php echo $selected_item; ?>;
+    window.addEventListener('load', function() {
+        itemSelect.value = '<?php echo $selected_item; ?>';
+        // Trigger change to auto-fill department
+        const event = new Event('change');
+        itemSelect.dispatchEvent(event);
         calculateRemaining();
         quantityInput.focus();
+    });
     <?php endif; ?>
 </script>
 

@@ -35,6 +35,9 @@ $suppliers_sql = "SELECT id, company_name FROM suppliers WHERE status = 'active'
 $suppliers_result = $db->query($suppliers_sql);
 $suppliers = $suppliers_result->fetch_all(MYSQLI_ASSOC);
 
+// Departments list
+$departments = ['Kitchen', 'Housekeeping', 'Laundry', 'Front Office', 'Maintenance', 'Restaurant', 'Bar', 'Store'];
+
 // Handle stock adjustment (INCREASE/DECREASE)
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['adjust_stock'])) {
     $adjustment_type = $_POST['adjustment_type'];
@@ -99,20 +102,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_info'])) {
     $supplier_id = intval($_POST['supplier_id']);
     $location = trim($_POST['location']);
     $status = $_POST['status'];
+    $department = trim($_POST['department']);
+    $old_department = $item['department'] ?? '';
     
     if (empty($item_name)) {
         $error = "Item name is required!";
     } else {
         $sql = "UPDATE inventory_items SET 
                 item_name = ?, category = ?, unit = ?, minimum_stock = ?, 
-                maximum_stock = ?, unit_price = ?, supplier_id = ?, location = ?, status = ?
+                maximum_stock = ?, unit_price = ?, supplier_id = ?, location = ?, status = ?, department = ?
                 WHERE id = ?";
         $stmt = $db->prepare($sql);
-        $stmt->bind_param("sssiiidisi", $item_name, $category, $unit, $minimum_stock, 
-                          $maximum_stock, $unit_price, $supplier_id, $location, $status, $item_id);
+        $stmt->bind_param("sssiiidissi", 
+            $item_name, $category, $unit, $minimum_stock, 
+            $maximum_stock, $unit_price, $supplier_id, $location, $status, $department, $item_id
+        );
         
         if ($stmt->execute()) {
-            logActivity($user_id, 'Edit Item', "Updated item info: $item_name (ID: $item_id)");
+            // Log department change if applicable
+            if ($old_department != $department) {
+                logActivity($user_id, 'Department Change', "Changed department of '$item_name' from '$old_department' to '$department'");
+            }
+            
+            logActivity($user_id, 'Edit Item', "Updated item info: $item_name (ID: $item_id) - Department: $department");
             $_SESSION['toast_message'] = "Item information updated successfully!";
             $_SESSION['toast_type'] = "success";
             
@@ -178,11 +190,13 @@ include '../templates/sidebar.php';
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-edit"></i> Edit Item</h1>
-        <p>Update item information and manage stock</p>
+        <p>Update item information and manage stock - You can change department assignment</p>
     </div>
     
     <?php if($error): ?>
-        <script>showToast('<?php echo addslashes($error); ?>', 'error');</script>
+        <div class="alert alert-error">
+            <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
+        </div>
     <?php endif; ?>
     
     <!-- Stock Status Banner -->
@@ -229,7 +243,7 @@ include '../templates/sidebar.php';
         <div class="card">
             <div class="card-header">
                 <h3><i class="fas fa-edit"></i> Edit Item Information</h3>
-                <p class="card-subtitle">Update the basic information of this item</p>
+                <p class="card-subtitle">Update the basic information of this item including department</p>
             </div>
             <div class="card-body">
                 <form method="POST" action="" id="infoForm">
@@ -273,6 +287,26 @@ include '../templates/sidebar.php';
                     </div>
                     
                     <div class="form-row">
+                        <div class="form-group department-group">
+                            <label><i class="fas fa-building"></i> Department <span class="required">*</span></label>
+                            <select name="department" id="department" required>
+                                <option value="">Select Department</option>
+                                <?php foreach($departments as $dept): ?>
+                                    <option value="<?php echo $dept; ?>" <?php echo ($item['department'] ?? '') == $dept ? 'selected' : ''; ?>>
+                                        <i class="fas <?php echo getDepartmentIcon($dept); ?>"></i> <?php echo $dept; ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small>This determines which department can request this item</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label><i class="fas fa-map-marker-alt"></i> Storage Location</label>
+                            <input type="text" name="location" id="location" value="<?php echo htmlspecialchars($item['location'] ?? ''); ?>" placeholder="e.g., Warehouse A, Shelf 1">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
                         <div class="form-group">
                             <label><i class="fas fa-exclamation-triangle"></i> Minimum Stock (Alert Level)</label>
                             <input type="number" name="minimum_stock" id="minimum_stock" value="<?php echo $item['minimum_stock']; ?>" min="0">
@@ -299,25 +333,30 @@ include '../templates/sidebar.php';
                         </div>
                         
                         <div class="form-group">
-                            <label><i class="fas fa-map-marker-alt"></i> Storage Location</label>
-                            <input type="text" name="location" id="location" value="<?php echo htmlspecialchars($item['location'] ?? ''); ?>" placeholder="e.g., Warehouse A, Shelf 1">
+                            <label><i class="fas fa-toggle-on"></i> Status</label>
+                            <select name="status" id="status">
+                                <option value="active" <?php echo $item['status'] == 'active' ? 'selected' : ''; ?>>Active</option>
+                                <option value="inactive" <?php echo $item['status'] == 'inactive' ? 'selected' : ''; ?>>Inactive</option>
+                            </select>
+                            <small>Inactive items won't appear in dropdowns</small>
                         </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label><i class="fas fa-toggle-on"></i> Status</label>
-                        <select name="status" id="status">
-                            <option value="active" <?php echo $item['status'] == 'active' ? 'selected' : ''; ?>>Active</option>
-                            <option value="inactive" <?php echo $item['status'] == 'inactive' ? 'selected' : ''; ?>>Inactive</option>
-                        </select>
-                        <small>Inactive items won't appear in dropdowns</small>
+                    <!-- Department Change Warning -->
+                    <div class="dept-change-warning" id="deptChangeWarning" style="display: none;">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <div class="warning-content">
+                            <strong>Department Change Alert!</strong>
+                            <p>Changing the department will affect future stock out requests. Current department: <strong id="currentDeptDisplay"></strong></p>
+                        </div>
                     </div>
                     
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
                         <div class="info-content">
                             <strong>Current Stock: <?php echo $item['current_stock']; ?> <?php echo $item['unit']; ?></strong><br>
-                            To update stock levels, use the <strong>Stock Adjustment</strong> tab above.
+                            To update stock levels, use the <strong>Stock Adjustment</strong> tab above.<br>
+                            <strong>Current Department:</strong> <?php echo !empty($item['department']) ? $item['department'] : 'Not Assigned'; ?>
                         </div>
                     </div>
                     
@@ -510,6 +549,22 @@ include '../templates/sidebar.php';
 </div>
 
 <style>
+    /* Alert */
+    .alert {
+        padding: 15px 20px;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    
+    .alert-error {
+        background: #FEE2E2;
+        color: #991B1B;
+        border-left: 4px solid #EF4444;
+    }
+    
     /* Stock Status Banner */
     .stock-status-banner {
         background: white;
@@ -673,6 +728,37 @@ include '../templates/sidebar.php';
         }
     }
     
+    /* Card */
+    .card {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        overflow: hidden;
+        margin-bottom: 25px;
+    }
+    
+    .card-header {
+        padding: 20px 24px;
+        background: #F9FAFB;
+        border-bottom: 1px solid #E5E7EB;
+    }
+    
+    .card-header h3 {
+        margin: 0;
+        color: #1E3A8A;
+        font-size: 18px;
+    }
+    
+    .card-subtitle {
+        margin: 5px 0 0;
+        font-size: 13px;
+        color: #6B7280;
+    }
+    
+    .card-body {
+        padding: 24px;
+    }
+    
     /* Two Columns for Stock Adjustment */
     .two-columns {
         display: grid;
@@ -756,6 +842,31 @@ include '../templates/sidebar.php';
         font-size: 13px;
     }
     
+    .dept-change-warning {
+        background: #FEF3C7;
+        border-left: 4px solid #F59E0B;
+        padding: 12px;
+        border-radius: 8px;
+        margin: 20px 0;
+        display: flex;
+        gap: 12px;
+        font-size: 13px;
+    }
+    
+    .dept-change-warning i {
+        font-size: 18px;
+        color: #F59E0B;
+    }
+    
+    .dept-change-warning .warning-content {
+        flex: 1;
+    }
+    
+    .dept-change-warning .warning-content p {
+        margin: 5px 0 0;
+        color: #92400E;
+    }
+    
     .btn-success {
         background: #10B981;
         color: white;
@@ -818,8 +929,7 @@ include '../templates/sidebar.php';
     }
     
     .form-group input,
-    .form-group select,
-    .form-group textarea {
+    .form-group select {
         width: 100%;
         padding: 12px 15px;
         border: 1px solid #E5E7EB;
@@ -971,6 +1081,29 @@ include '../templates/sidebar.php';
         color: #6B7280;
     }
     
+    /* Table */
+    .table-responsive {
+        overflow-x: auto;
+    }
+    
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    .data-table th,
+    .data-table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #E5E7EB;
+    }
+    
+    .data-table th {
+        background: #F9FAFB;
+        font-weight: 600;
+        font-size: 13px;
+    }
+    
     /* Responsive */
     @media (max-width: 900px) {
         .two-columns {
@@ -1013,6 +1146,34 @@ include '../templates/sidebar.php';
 </style>
 
 <script>
+    // Get elements
+    const departmentSelect = document.getElementById('department');
+    const deptChangeWarning = document.getElementById('deptChangeWarning');
+    const currentDeptDisplay = document.getElementById('currentDeptDisplay');
+    const currentDepartment = '<?php echo addslashes($item['department'] ?? ''); ?>';
+    
+    // Set current department display
+    if (currentDeptDisplay) {
+        currentDeptDisplay.textContent = currentDepartment || 'Not Assigned';
+    }
+    
+    // Show warning when department changes
+    if (departmentSelect) {
+        departmentSelect.addEventListener('change', function() {
+            const newDepartment = this.value;
+            if (newDepartment !== currentDepartment) {
+                deptChangeWarning.style.display = 'flex';
+                // Update warning message with new department
+                const warningContent = deptChangeWarning.querySelector('.warning-content p');
+                if (warningContent) {
+                    warningContent.innerHTML = `Changing department from <strong>${currentDepartment || 'Not Assigned'}</strong> to <strong>${newDepartment}</strong> will affect future stock out requests.`;
+                }
+            } else {
+                deptChangeWarning.style.display = 'none';
+            }
+        });
+    }
+    
     // Tab switching
     const tabBtns = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
@@ -1141,8 +1302,44 @@ include '../templates/sidebar.php';
         });
     }
     
-    // Auto focus on first field
+    function showToast(message, type) {
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: ${type === 'error' ? '#EF4444' : '#10B981'};
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            z-index: 10000;
+            animation: fadeInUp 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        `;
+        toast.innerHTML = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+    
+    // Auto focus
     document.getElementById('item_name').focus();
 </script>
+
+<?php
+// Helper function for department icons
+function getDepartmentIcon($department) {
+    switch($department) {
+        case 'Kitchen': return 'fa-utensils';
+        case 'Housekeeping': return 'fa-broom';
+        case 'Laundry': return 'fa-tshirt';
+        case 'Front Office': return 'fa-hotel';
+        case 'Maintenance': return 'fa-wrench';
+        case 'Restaurant': return 'fa-utensil-spoon';
+        case 'Bar': return 'fa-cocktail';
+        case 'Store': return 'fa-warehouse';
+        default: return 'fa-building';
+    }
+}
+?>
 
 <?php include '../templates/footer.php'; ?>

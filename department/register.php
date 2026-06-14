@@ -2,11 +2,10 @@
 require_once '../includes/config.php';
 require_once '../includes/db_connection.php';
 require_once '../includes/functions.php';
+require_once '../includes/auth_check.php';
 
-
-
-// Check if admin is logged in (optional)
-// For now, we'll allow direct access but you should add admin check
+// Only Admin can access
+checkAuth(['Admin','Hotel Manager']);
 
 $error = '';
 $success = '';
@@ -16,24 +15,27 @@ $departments_sql = "SELECT id, department_name FROM departments WHERE status = '
 $departments_result = $db->query($departments_sql);
 $departments = $departments_result->fetch_all(MYSQLI_ASSOC);
 
+// Default password
+$default_password = '123456';
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $fullname = trim($_POST['fullname']);
-    $sex = $_POST['sex'];
+    $sex = $_POST['sex'] ?? '';
     $email = trim($_POST['email']);
     $phone = trim($_POST['phone']);
     $department_id = intval($_POST['department_id']);
-    $employee_id = trim($_POST['employee_id']);
-    $position = trim($_POST['position']);
-    $password = $_POST['password'];
-    $confirm_password = $_POST['confirm_password'];
+    $employee_id = !empty(trim($_POST['employee_id'])) ? trim($_POST['employee_id']) : null;
+    $position = !empty(trim($_POST['position'])) ? trim($_POST['position']) : null;
     
     // Validation
-    if (empty($fullname) || empty($email) || empty($phone) || empty($department_id)) {
-        $error = "Please fill in all required fields!";
-    } elseif ($password !== $confirm_password) {
-        $error = "Passwords do not match!";
-    } elseif (strlen($password) < 6) {
-        $error = "Password must be at least 6 characters!";
+    if (empty($fullname)) {
+        $error = "Full name is required!";
+    } elseif (empty($email)) {
+        $error = "Email address is required!";
+    } elseif (empty($phone)) {
+        $error = "Phone number is required!";
+    } elseif (empty($department_id)) {
+        $error = "Please select a department!";
     } else {
         // Check if email already exists
         $check_sql = "SELECT id FROM department_users WHERE email = ?";
@@ -43,176 +45,207 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($check_stmt->get_result()->num_rows > 0) {
             $error = "Email already registered!";
         } else {
-            // Check if employee ID already exists
-            if (!empty($employee_id)) {
-                $check_sql = "SELECT id FROM department_users WHERE employee_id = ?";
-                $check_stmt = $db->prepare($check_sql);
-                $check_stmt->bind_param("s", $employee_id);
-                $check_stmt->execute();
-                if ($check_stmt->get_result()->num_rows > 0) {
-                    $error = "Employee ID already exists!";
+            // Check if phone already exists
+            $check_sql = "SELECT id FROM department_users WHERE phone = ?";
+            $check_stmt = $db->prepare($check_sql);
+            $check_stmt->bind_param("s", $phone);
+            $check_stmt->execute();
+            if ($check_stmt->get_result()->num_rows > 0) {
+                $error = "Phone number already registered!";
+            } else {
+                // Check if employee ID already exists (only if not null)
+                if (!empty($employee_id)) {
+                    $check_sql = "SELECT id FROM department_users WHERE employee_id = ?";
+                    $check_stmt = $db->prepare($check_sql);
+                    $check_stmt->bind_param("s", $employee_id);
+                    $check_stmt->execute();
+                    if ($check_stmt->get_result()->num_rows > 0) {
+                        $error = "Employee ID already exists!";
+                    }
                 }
-            }
-            
-            if (empty($error)) {
-                $hashed_password = password_hash($password, PASSWORD_DEFAULT);
                 
-                $sql = "INSERT INTO department_users (fullname, sex, email, phone, department_id, employee_id, position, password) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-                $stmt = $db->prepare($sql);
-                $stmt->bind_param("ssssisss", $fullname, $sex, $email, $phone, $department_id, $employee_id, $position, $hashed_password);
-                
-                if ($stmt->execute()) {
-                    $success = "Department user created successfully!";
-                    // Clear form
-                    $_POST = [];
-                } else {
-                    $error = "Error creating user: " . $db->error;
+                if (empty($error)) {
+                    // Use default password
+                    $hashed_password = password_hash($default_password, PASSWORD_DEFAULT);
+                    
+                    $sql = "INSERT INTO department_users (fullname, sex, email, phone, department_id, employee_id, position, password, status) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')";
+                    $stmt = $db->prepare($sql);
+                    $stmt->bind_param("ssssisss", $fullname, $sex, $email, $phone, $department_id, $employee_id, $position, $hashed_password);
+                    
+                    if ($stmt->execute()) {
+                        logActivity($_SESSION['user_id'], 'Register Department User', "Registered new user: $fullname ($email) with default password");
+                        
+                        $_SESSION['toast_message'] = "User <strong>" . htmlspecialchars($fullname) . "</strong> registered successfully! Default password: <strong>$default_password</strong>";
+                        $_SESSION['toast_type'] = "success";
+                        
+                        // Redirect to view_department_users.php
+                        header("Location: view_department_users.php");
+                        exit();
+                    } else {
+                        $error = "Error creating user: " . $db->error;
+                    }
                 }
             }
         }
     }
 }
 
-include 'header.php';
+include '../templates/header.php';
+include '../templates/sidebar.php';
 ?>
 
-<div class="register-container">
+<div class="main-content">
     <div class="page-header">
-        <h1><i class="fas fa-user-plus"></i> Register Department User</h1>
-        <p>Create accounts for department staff who will confirm stock requests</p>
+        <div>
+            <h1><i class="fas fa-user-plus"></i> Register Department User</h1>
+            <p>Create accounts for department staff who will confirm stock requests</p>
+        </div>
+        <div class="header-actions">
+            <a href="view_department_users.php" class="btn-outline">
+                <i class="fas fa-arrow-left"></i> Back to Users
+            </a>
+        </div>
     </div>
     
-    <div class="card">
-        <div class="card-header">
-            <h3><i class="fas fa-info-circle"></i> User Information</h3>
-        </div>
-        <div class="card-body">
-            <?php if($error): ?>
-                <div class="alert error">
-                    <i class="fas fa-exclamation-circle"></i>
-                    <?php echo htmlspecialchars($error); ?>
-                </div>
-            <?php endif; ?>
-            
-            <?php if($success): ?>
-                <div class="alert success">
-                    <i class="fas fa-check-circle"></i>
-                    <?php echo htmlspecialchars($success); ?>
-                </div>
-            <?php endif; ?>
-            
-            <form method="POST" action="">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Full Name <span class="required">*</span></label>
-                        <input type="text" name="fullname" value="<?php echo htmlspecialchars($_POST['fullname'] ?? ''); ?>" required>
+    <div class="register-container">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-info-circle"></i> User Information</h3>
+                <p class="card-subtitle">Fill in the details below to create a department user account</p>
+            </div>
+            <div class="card-body">
+                <?php if($error): ?>
+                    <div class="alert error">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <?php echo htmlspecialchars($error); ?>
+                    </div>
+                <?php endif; ?>
+                
+                <form method="POST" action="" id="registerForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Full Name <span class="required">*</span></label>
+                            <input type="text" name="fullname" value="<?php echo htmlspecialchars($_POST['fullname'] ?? ''); ?>" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Sex</label>
+                            <select name="sex">
+                                <option value="">Select</option>
+                                <option value="Male" <?php echo (($_POST['sex'] ?? '') == 'Male') ? 'selected' : ''; ?>>Male</option>
+                                <option value="Female" <?php echo (($_POST['sex'] ?? '') == 'Female') ? 'selected' : ''; ?>>Female</option>
+                                <option value="Other" <?php echo (($_POST['sex'] ?? '') == 'Other') ? 'selected' : ''; ?>>Other</option>
+                            </select>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label>Sex</label>
-                        <select name="sex">
-                            <option value="">Select</option>
-                            <option value="Male" <?php echo (($_POST['sex'] ?? '') == 'Male') ? 'selected' : ''; ?>>Male</option>
-                            <option value="Female" <?php echo (($_POST['sex'] ?? '') == 'Female') ? 'selected' : ''; ?>>Female</option>
-                            <option value="Other" <?php echo (($_POST['sex'] ?? '') == 'Other') ? 'selected' : ''; ?>>Other</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Email Address <span class="required">*</span></label>
-                        <input type="email" name="email" value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>" required>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Email Address <span class="required">*</span></label>
+                            <input type="email" name="email" value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Phone Number <span class="required">*</span></label>
+                            <input type="tel" name="phone" value="<?php echo htmlspecialchars($_POST['phone'] ?? ''); ?>" required>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label>Phone Number <span class="required">*</span></label>
-                        <input type="tel" name="phone" value="<?php echo htmlspecialchars($_POST['phone'] ?? ''); ?>" required>
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Department <span class="required">*</span></label>
-                        <select name="department_id" required>
-                            <option value="">Select Department</option>
-                            <?php foreach($departments as $dept): ?>
-                                <option value="<?php echo $dept['id']; ?>" <?php echo (($_POST['department_id'] ?? '') == $dept['id']) ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($dept['department_name']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Employee ID</label>
-                        <input type="text" name="employee_id" value="<?php echo htmlspecialchars($_POST['employee_id'] ?? ''); ?>" placeholder="Optional">
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Position/Title</label>
-                        <input type="text" name="position" value="<?php echo htmlspecialchars($_POST['position'] ?? ''); ?>" placeholder="e.g., Department Head, Supervisor">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Department <span class="required">*</span></label>
+                            <select name="department_id" required>
+                                <option value="">Select Department</option>
+                                <?php foreach($departments as $dept): ?>
+                                    <option value="<?php echo $dept['id']; ?>" <?php echo (($_POST['department_id'] ?? '') == $dept['id']) ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($dept['department_name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Employee ID</label>
+                            <input type="text" name="employee_id" value="<?php echo htmlspecialchars($_POST['employee_id'] ?? ''); ?>" placeholder="Optional - Staff ID">
+                            <small>Leave empty if not applicable</small>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label>Status</label>
-                        <select name="status">
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Password <span class="required">*</span></label>
-                        <input type="password" name="password" required>
-                        <small>Minimum 6 characters</small>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Position/Title</label>
+                            <input type="text" name="position" value="<?php echo htmlspecialchars($_POST['position'] ?? ''); ?>" placeholder="e.g., Department Head, Supervisor">
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label>Confirm Password <span class="required">*</span></label>
-                        <input type="password" name="confirm_password" required>
+                   
+                    
+                    <div class="form-actions">
+                        <button type="submit" class="btn-primary" id="submitBtn">
+                            <i class="fas fa-save"></i> Register User
+                        </button>
+                        <button type="reset" class="btn-secondary" id="resetBtn">
+                            <i class="fas fa-undo"></i> Reset
+                        </button>
+                        <a href="view_department_users.php" class="btn-outline">
+                            <i class="fas fa-arrow-left"></i> Cancel
+                        </a>
                     </div>
-                </div>
-                
-                <div class="form-actions">
-                    <button type="submit" class="btn-primary">
-                        <i class="fas fa-save"></i> Register User
-                    </button>
-                    <button type="reset" class="btn-secondary">
-                        <i class="fas fa-undo"></i> Reset
-                    </button>
-                    <a href="dashboard.php" class="btn-outline">
-                        <i class="fas fa-arrow-left"></i> Back to Dashboard
-                    </a>
-                </div>
-            </form>
+                </form>
+            </div>
         </div>
     </div>
 </div>
 
 <style>
-    .register-container {
-        max-width: 900px;
-        margin: 0 auto;
+    .main-content {
         padding: 20px;
+        background: #F3F4F6;
+        min-height: 100vh;
     }
     
     .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
         margin-bottom: 25px;
+        flex-wrap: wrap;
+        gap: 15px;
     }
     
     .page-header h1 {
+        font-size: 24px;
         color: #1E3A8A;
-        margin-bottom: 5px;
+        margin: 0;
     }
     
     .page-header p {
+        margin: 5px 0 0;
         color: #6B7280;
+    }
+    
+    .header-actions .btn-outline {
+        background: transparent;
+        border: 1px solid #1E3A8A;
+        color: #1E3A8A;
+        padding: 10px 20px;
+        border-radius: 10px;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.3s;
+    }
+    
+    .header-actions .btn-outline:hover {
+        background: #1E3A8A;
+        color: white;
+    }
+    
+    .register-container {
+        max-width: 900px;
+        margin: 0 auto;
     }
     
     .card {
@@ -231,6 +264,13 @@ include 'header.php';
     .card-header h3 {
         margin: 0;
         color: #1E3A8A;
+        font-size: 18px;
+    }
+    
+    .card-subtitle {
+        margin: 5px 0 0;
+        font-size: 13px;
+        color: #6B7280;
     }
     
     .card-body {
@@ -305,6 +345,36 @@ include 'header.php';
         border-left: 4px solid #10B981;
     }
     
+    .info-box {
+        background: #DBEAFE;
+        border-left: 4px solid #1E3A8A;
+        padding: 15px;
+        border-radius: 10px;
+        margin: 20px 0;
+        display: flex;
+        gap: 12px;
+    }
+    
+    .info-box i {
+        font-size: 20px;
+        color: #1E3A8A;
+    }
+    
+    .info-content {
+        flex: 1;
+        font-size: 13px;
+        color: #1E40AF;
+    }
+    
+    .info-content ul {
+        margin: 8px 0 0 20px;
+        padding: 0;
+    }
+    
+    .info-content li {
+        margin: 3px 0;
+    }
+    
     .form-actions {
         display: flex;
         gap: 15px;
@@ -372,7 +442,30 @@ include 'header.php';
             justify-content: center;
             width: 100%;
         }
+        
+        .page-header {
+            flex-direction: column;
+            text-align: center;
+        }
     }
 </style>
 
-<?php include 'footer.php'; ?>
+<script>
+    // Form submission
+    const form = document.getElementById('registerForm');
+    const submitBtn = document.getElementById('submitBtn');
+    
+    form.addEventListener('submit', function(e) {
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registering...';
+        submitBtn.disabled = true;
+    });
+    
+    // Reset button
+    document.getElementById('resetBtn').addEventListener('click', function() {
+        setTimeout(() => {
+            document.querySelector('input[name="fullname"]').focus();
+        }, 100);
+    });
+</script>
+
+<?php include '../templates/footer.php'; ?>
