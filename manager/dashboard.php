@@ -49,7 +49,7 @@ include '../templates/sidebar.php';
 
 <div class="main-content">
     <div class="page-header">
-        <h1><i class="fas fa-chart-line"></i> Manager Dashboard</h1>
+      
         <p>Welcome, <?php echo htmlspecialchars($_SESSION['fullname']); ?>! Hotel inventory overview</p>
     </div>
     

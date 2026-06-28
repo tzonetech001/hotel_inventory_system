@@ -38,7 +38,7 @@ include '../templates/sidebar.php';
 
 <div class="main-content">
     <div class="page-header">
-        <h1><i class="fas fa-warehouse"></i> Storekeeper Dashboard</h1>
+       
         <p>Welcome back, <?php echo htmlspecialchars($_SESSION['fullname']); ?>! Here's your inventory overview</p>
     </div>
     

@@ -29,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Update Profile Information
     if (isset($_POST['action']) && $_POST['action'] == 'update_profile') {
         $fullname = trim($_POST['fullname']);
+        $username = trim($_POST['username']);
         $email = trim($_POST['email']);
         $phone = trim($_POST['phone']);
         
@@ -37,30 +38,49 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if (empty($fullname)) {
             $errors[] = "Full name is required";
         }
+        if (empty($username)) {
+            $errors[] = "Username is required";
+        }
         if (empty($email)) {
             $errors[] = "Email is required";
         }
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $errors[] = "Invalid email format";
         }
+        if (!preg_match('/^[a-zA-Z0-9_]+$/', $username)) {
+            $errors[] = "Username can only contain letters, numbers, and underscores";
+        }
         
         if (empty($errors)) {
-            // Check if email exists for other users
-            $check_sql = "SELECT id FROM users WHERE email = ? AND id != ?";
+            // Check if username exists for other users
+            $check_sql = "SELECT id FROM users WHERE (username = ? OR email = ?) AND id != ?";
             $check_stmt = $db->prepare($check_sql);
-            $check_stmt->bind_param("si", $email, $user_id);
+            $check_stmt->bind_param("ssi", $username, $email, $user_id);
             $check_stmt->execute();
             $check_result = $check_stmt->get_result();
             
             if ($check_result->num_rows > 0) {
-                $error = "Email already exists for another user!";
+                $existing = $check_result->fetch_assoc();
+                $check_stmt = $db->prepare("SELECT username, email FROM users WHERE id = ?");
+                $check_stmt->bind_param("i", $existing['id']);
+                $check_stmt->execute();
+                $existing_data = $check_stmt->get_result()->fetch_assoc();
+                
+                if ($existing_data['username'] == $username) {
+                    $error = "Username already exists! Please choose a different username.";
+                } else {
+                    $error = "Email already exists for another user!";
+                }
             } else {
-                $update_sql = "UPDATE users SET fullname = ?, email = ?, phone = ? WHERE id = ?";
+                $update_sql = "UPDATE users SET fullname = ?, username = ?, email = ?, phone = ? WHERE id = ?";
                 $update_stmt = $db->prepare($update_sql);
-                $update_stmt->bind_param("sssi", $fullname, $email, $phone, $user_id);
+                $update_stmt->bind_param("ssssi", $fullname, $username, $email, $phone, $user_id);
                 
                 if ($update_stmt->execute()) {
-                    logActivity($user_id, 'Update Profile', "Updated profile information");
+                    // Update session username if changed
+                    $_SESSION['username'] = $username;
+                    
+                    logActivity($user_id, 'Update Profile', "Updated profile information (Username: $username, Email: $email)");
                     $_SESSION['toast_message'] = "Profile updated successfully!";
                     $_SESSION['toast_type'] = "success";
                     header("Location: profile.php");
@@ -109,13 +129,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 
                 if ($update_stmt->execute()) {
                     logActivity($user_id, 'Change Password', "Changed account password");
-                    $_SESSION['toast_message'] = "Password changed successfully! Please login again.";
+                    $_SESSION['toast_message'] = "Password changed successfully!";
                     $_SESSION['toast_type'] = "success";
-                    
-                    // Optional: Log out user after password change for security
-                    // session_destroy();
-                    // header("Location: login.php");
-                    // exit();
                     
                     header("Location: profile.php");
                     exit();
@@ -147,7 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             } else {
                 // Get the correct document root path
                 $doc_root = $_SERVER['DOCUMENT_ROOT'];
-                $upload_dir = $doc_root . '/hotel_inventory/uploads/profile_pictures/';
+                $upload_dir = $doc_root . '/hotel_inventory_system/uploads/profile_pictures/';
                 
                 if (!file_exists($upload_dir)) {
                     mkdir($upload_dir, 0777, true);
@@ -189,7 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Remove Profile Picture
     if (isset($_POST['action']) && $_POST['action'] == 'remove_picture') {
         $doc_root = $_SERVER['DOCUMENT_ROOT'];
-        $upload_dir = $doc_root . '/hotel_inventory/uploads/profile_pictures/';
+        $upload_dir = $doc_root . '/hotel_inventory_system/uploads/profile_pictures/';
         
         if (!empty($user['profile_picture'])) {
             $old_file = $upload_dir . $user['profile_picture'];
@@ -225,8 +240,8 @@ $user = $result->fetch_assoc();
 include '../templates/header.php';
 include '../templates/sidebar.php';
 
-$profile_picture_path = !empty($user['profile_picture']) ? '/hotel_inventory/uploads/profile_pictures/' . $user['profile_picture'] : '';
-$full_image_path = !empty($user['profile_picture']) ? $_SERVER['DOCUMENT_ROOT'] . '/hotel_inventory/uploads/profile_pictures/' . $user['profile_picture'] : '';
+$profile_picture_path = !empty($user['profile_picture']) ? '/hotel_inventory_system/uploads/profile_pictures/' . $user['profile_picture'] : '';
+$full_image_path = !empty($user['profile_picture']) ? $_SERVER['DOCUMENT_ROOT'] . '/hotel_inventory_system/uploads/profile_pictures/' . $user['profile_picture'] : '';
 $has_profile_image = !empty($user['profile_picture']) && file_exists($full_image_path);
 ?>
 
@@ -310,10 +325,6 @@ $has_profile_image = !empty($user['profile_picture']) && file_exists($full_image
                             <span class="info-value">#<?php echo $user['id']; ?></span>
                         </div>
                         <div class="info-item">
-                            <span class="info-label">Username:</span>
-                            <span class="info-value"><?php echo htmlspecialchars($user['username']); ?></span>
-                        </div>
-                        <div class="info-item">
                             <span class="info-label">Account Created:</span>
                             <span class="info-value"><?php echo date('d/m/Y H:i', strtotime($user['created_at'])); ?></span>
                         </div>
@@ -333,6 +344,22 @@ $has_profile_image = !empty($user['profile_picture']) && file_exists($full_image
                     </div>
                 </div>
             </div>
+            
+            <!-- Security Tips Card -->
+            <div class="card animate-card-delayed">
+                <div class="card-header">
+                    <h3><i class="fas fa-shield-alt"></i> Security Tips</h3>
+                </div>
+                <div class="card-body">
+                    <ul class="security-tips">
+                        <li><i class="fas fa-check-circle"></i> Use a strong, unique password</li>
+                        <li><i class="fas fa-check-circle"></i> Never share your password with anyone</li>
+                        <li><i class="fas fa-check-circle"></i> Change your password regularly</li>
+                        <li><i class="fas fa-check-circle"></i> Keep your email address up to date</li>
+                        <li><i class="fas fa-check-circle"></i> Choose a professional username</li>
+                    </ul>
+                </div>
+            </div>
         </div>
         
         <!-- Right Column: Edit Forms -->
@@ -341,7 +368,7 @@ $has_profile_image = !empty($user['profile_picture']) && file_exists($full_image
             <div class="card animate-card">
                 <div class="card-header">
                     <h3><i class="fas fa-edit"></i> Edit Profile Information</h3>
-                    <p class="card-subtitle">Update your personal details</p>
+                    <p class="card-subtitle">Update your personal details and username</p>
                 </div>
                 <div class="card-body">
                     <form method="POST" action="" id="profileForm">
@@ -350,6 +377,16 @@ $has_profile_image = !empty($user['profile_picture']) && file_exists($full_image
                         <div class="form-group">
                             <label><i class="fas fa-user"></i> Full Name <span class="required">*</span></label>
                             <input type="text" name="fullname" value="<?php echo htmlspecialchars($user['fullname']); ?>" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label><i class="fas fa-user-tag"></i> Username <span class="required">*</span></label>
+                            <div class="username-wrapper">
+                                <span class="username-prefix">@</span>
+                                <input type="text" name="username" id="username" value="<?php echo htmlspecialchars($user['username']); ?>" required pattern="[a-zA-Z0-9_]+" title="Only letters, numbers, and underscores allowed">
+                            </div>
+                            <small>Username is used for login and must be unique. Only letters, numbers, and underscores allowed.</small>
+                            <div class="username-status" id="usernameStatus"></div>
                         </div>
                         
                         <div class="form-group">
@@ -367,6 +404,9 @@ $has_profile_image = !empty($user['profile_picture']) && file_exists($full_image
                         <div class="form-actions">
                             <button type="submit" class="btn-primary" id="saveProfileBtn">
                                 <i class="fas fa-save"></i> Save Changes
+                            </button>
+                            <button type="button" class="btn-secondary" id="resetProfileBtn">
+                                <i class="fas fa-undo"></i> Reset
                             </button>
                         </div>
                     </form>
@@ -660,6 +700,27 @@ $has_profile_image = !empty($user['profile_picture']) && file_exists($full_image
         color: #1F2937;
     }
     
+    /* Security Tips */
+    .security-tips {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    
+    .security-tips li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 0;
+        font-size: 13px;
+        color: #374151;
+    }
+    
+    .security-tips li i {
+        color: #10B981;
+        font-size: 14px;
+    }
+    
     /* Form Styles */
     .form-group {
         margin-bottom: 20px;
@@ -697,6 +758,59 @@ $has_profile_image = !empty($user['profile_picture']) && file_exists($full_image
         margin-top: 5px;
         font-size: 11px;
         color: #6B7280;
+    }
+    
+    /* Username Wrapper */
+    .username-wrapper {
+        display: flex;
+        align-items: center;
+        border: 1px solid #E5E7EB;
+        border-radius: 10px;
+        overflow: hidden;
+        transition: all 0.3s;
+    }
+    
+    .username-wrapper:focus-within {
+        border-color: #1E3A8A;
+        box-shadow: 0 0 0 3px rgba(30,58,138,0.1);
+    }
+    
+    .username-prefix {
+        background: #F3F4F6;
+        padding: 12px 12px;
+        font-size: 14px;
+        color: #6B7280;
+        border-right: 1px solid #E5E7EB;
+    }
+    
+    .username-wrapper input {
+        border: none;
+        border-radius: 0;
+        padding: 12px 12px;
+    }
+    
+    .username-wrapper input:focus {
+        box-shadow: none;
+    }
+    
+    .username-status {
+        font-size: 12px;
+        margin-top: 5px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+    
+    .username-status.available {
+        color: #10B981;
+    }
+    
+    .username-status.taken {
+        color: #EF4444;
+    }
+    
+    .username-status.invalid {
+        color: #F59E0B;
     }
     
     /* Password Wrapper */
@@ -855,6 +969,25 @@ $has_profile_image = !empty($user['profile_picture']) && file_exists($full_image
         transform: none;
     }
     
+    .btn-secondary {
+        background: #F3F4F6;
+        color: #374151;
+        padding: 12px 28px;
+        border: none;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .btn-secondary:hover {
+        background: #E5E7EB;
+    }
+    
     .btn-outline-small {
         background: transparent;
         border: 1px solid #DC2626;
@@ -885,7 +1018,7 @@ $has_profile_image = !empty($user['profile_picture']) && file_exists($full_image
             flex-direction: column;
         }
         
-        .btn-primary {
+        .btn-primary, .btn-secondary {
             justify-content: center;
             width: 100%;
         }
@@ -923,6 +1056,70 @@ $has_profile_image = !empty($user['profile_picture']) && file_exists($full_image
             if (this.files.length > 0) {
                 document.getElementById('pictureForm').submit();
             }
+        });
+    }
+    
+    // Username availability check
+    const usernameInput = document.getElementById('username');
+    const usernameStatus = document.getElementById('usernameStatus');
+    const originalUsername = '<?php echo $user['username']; ?>';
+    let usernameTimeout;
+    
+    if (usernameInput) {
+        usernameInput.addEventListener('input', function() {
+            clearTimeout(usernameTimeout);
+            const username = this.value.trim();
+            
+            if (username === originalUsername) {
+                usernameStatus.innerHTML = '<i class="fas fa-check-circle"></i> Current username (unchanged)';
+                usernameStatus.className = 'username-status available';
+                return;
+            }
+            
+            if (username.length < 3) {
+                usernameStatus.innerHTML = '<i class="fas fa-info-circle"></i> Username must be at least 3 characters';
+                usernameStatus.className = 'username-status invalid';
+                return;
+            }
+            
+            if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+                usernameStatus.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Only letters, numbers, and underscores allowed';
+                usernameStatus.className = 'username-status invalid';
+                return;
+            }
+            
+            usernameStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking availability...';
+            usernameStatus.className = '';
+            
+            usernameTimeout = setTimeout(function() {
+                fetch('check_username.php?username=' + encodeURIComponent(username) + '&user_id=<?php echo $user_id; ?>')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.available) {
+                            usernameStatus.innerHTML = '<i class="fas fa-check-circle"></i> Username is available!';
+                            usernameStatus.className = 'username-status available';
+                        } else {
+                            usernameStatus.innerHTML = '<i class="fas fa-times-circle"></i> Username already taken!';
+                            usernameStatus.className = 'username-status taken';
+                        }
+                    })
+                    .catch(error => {
+                        usernameStatus.innerHTML = '<i class="fas fa-exclamation-circle"></i> Error checking username';
+                        usernameStatus.className = 'username-status invalid';
+                    });
+            }, 500);
+        });
+    }
+    
+    // Reset profile form
+    const resetBtn = document.getElementById('resetProfileBtn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', function() {
+            document.querySelector('input[name="fullname"]').value = '<?php echo addslashes($user['fullname']); ?>';
+            document.querySelector('input[name="username"]').value = '<?php echo addslashes($user['username']); ?>';
+            document.querySelector('input[name="email"]').value = '<?php echo addslashes($user['email']); ?>';
+            document.querySelector('input[name="phone"]').value = '<?php echo addslashes($user['phone'] ?? ''); ?>';
+            usernameStatus.innerHTML = '';
         });
     }
     
@@ -1018,7 +1215,15 @@ $has_profile_image = !empty($user['profile_picture']) && file_exists($full_image
     const passwordForm = document.getElementById('passwordForm');
     
     if (profileForm) {
-        profileForm.addEventListener('submit', function() {
+        profileForm.addEventListener('submit', function(e) {
+            const username = usernameInput ? usernameInput.value.trim() : '';
+            
+            if (username !== originalUsername && usernameStatus.classList.contains('taken')) {
+                e.preventDefault();
+                showToast('Username is already taken!', 'error');
+                return;
+            }
+            
             const btn = document.getElementById('saveProfileBtn');
             if (btn) {
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';

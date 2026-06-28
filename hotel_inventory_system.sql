@@ -982,3 +982,21 @@ COMMIT;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+
+
+-- Angalia kama table imeundwa
+SHOW TABLES LIKE 'sms_logs';
+
+-- Kama haipo, iunde manually
+CREATE TABLE IF NOT EXISTS sms_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    phone_number VARCHAR(20) NOT NULL,
+    message TEXT,
+    status ENUM('sent', 'failed') DEFAULT 'sent',
+    response_code INT,
+    response_text TEXT,
+    created_at DATETIME NOT NULL,
+    INDEX idx_phone (phone_number),
+    INDEX idx_status (status),
+    INDEX idx_created (created_at)
+);

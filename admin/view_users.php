@@ -11,6 +11,15 @@ $user_id = $_SESSION['user_id'];
 // Handle user status toggle
 if (isset($_GET['toggle'])) {
     $toggle_id = intval($_GET['toggle']);
+    
+    // Don't allow toggling own status
+    if ($toggle_id == $user_id) {
+        $_SESSION['toast_message'] = "You cannot change your own status!";
+        $_SESSION['toast_type'] = "error";
+        header("Location: view_users.php");
+        exit();
+    }
+    
     $sql = "SELECT status FROM users WHERE id = ?";
     $stmt = $db->prepare($sql);
     $stmt->bind_param("i", $toggle_id);
@@ -18,28 +27,153 @@ if (isset($_GET['toggle'])) {
     $result = $stmt->get_result();
     $user = $result->fetch_assoc();
     
-    $new_status = ($user['status'] == 'active') ? 'inactive' : 'active';
-    $sql = "UPDATE users SET status = ? WHERE id = ?";
-    $stmt = $db->prepare($sql);
-    $stmt->bind_param("si", $new_status, $toggle_id);
-    
-    if ($stmt->execute()) {
-        logActivity($user_id, 'Toggle User', "Changed user ID $toggle_id status to $new_status");
-        $_SESSION['toast_message'] = "User status updated successfully!";
-        $_SESSION['toast_type'] = "success";
-    } else {
-        $_SESSION['toast_message'] = "Error updating user status!";
-        $_SESSION['toast_type'] = "error";
+    if ($user) {
+        $new_status = ($user['status'] == 'active') ? 'inactive' : 'active';
+        $sql = "UPDATE users SET status = ? WHERE id = ?";
+        $stmt = $db->prepare($sql);
+        $stmt->bind_param("si", $new_status, $toggle_id);
+        
+        if ($stmt->execute()) {
+            logActivity($user_id, 'Toggle User', "Changed user ID $toggle_id status to $new_status");
+            $_SESSION['toast_message'] = "User status updated successfully!";
+            $_SESSION['toast_type'] = "success";
+        } else {
+            $_SESSION['toast_message'] = "Error updating user status!";
+            $_SESSION['toast_type'] = "error";
+        }
     }
     header("Location: view_users.php");
     exit();
 }
 
-// Handle user deletion
+// Handle user deletion with foreign key check
 if (isset($_GET['delete'])) {
     $delete_id = intval($_GET['delete']);
-    if ($delete_id != $user_id) {
-        $user_sql = "SELECT username FROM users WHERE id = ?";
+    
+    // Prevent deleting own account
+    if ($delete_id == $user_id) {
+        $_SESSION['toast_message'] = "You cannot delete your own account!";
+        $_SESSION['toast_type'] = "error";
+        header("Location: view_users.php");
+        exit();
+    }
+    
+    // First, check if user has any related records
+    $has_relations = false;
+    $relation_errors = [];
+    
+    // Check purchase_orders as approved_by
+    $check_sql = "SELECT COUNT(*) as count FROM purchase_orders WHERE approved_by = ?";
+    $check_stmt = $db->prepare($check_sql);
+    $check_stmt->bind_param("i", $delete_id);
+    $check_stmt->execute();
+    $check_result = $check_stmt->get_result();
+    $count = $check_result->fetch_assoc();
+    if ($count['count'] > 0) {
+        $has_relations = true;
+        $relation_errors[] = $count['count'] . " purchase order(s) approved by this user";
+    }
+    
+    // Check purchase_orders as created_by (if column exists)
+    $check_sql = "SELECT COUNT(*) as count FROM purchase_orders WHERE created_by = ?";
+    $check_stmt = $db->prepare($check_sql);
+    $check_stmt->bind_param("i", $delete_id);
+    $check_stmt->execute();
+    $check_result = $check_stmt->get_result();
+    $count = $check_result->fetch_assoc();
+    if ($count && $count['count'] > 0) {
+        $has_relations = true;
+        $relation_errors[] = $count['count'] . " purchase order(s) created by this user";
+    }
+    
+    // Check if stock_movements table exists and has user_id column
+    $table_check = $db->query("SHOW TABLES LIKE 'stock_movements'");
+    if ($table_check->num_rows > 0) {
+        // Check if user_id column exists in stock_movements
+        $col_check = $db->query("SHOW COLUMNS FROM stock_movements LIKE 'user_id'");
+        if ($col_check->num_rows > 0) {
+            $check_sql = "SELECT COUNT(*) as count FROM stock_movements WHERE user_id = ?";
+            $check_stmt = $db->prepare($check_sql);
+            $check_stmt->bind_param("i", $delete_id);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            $count = $check_result->fetch_assoc();
+            if ($count['count'] > 0) {
+                $has_relations = true;
+                $relation_errors[] = $count['count'] . " stock movement(s) recorded by this user";
+            }
+        }
+        
+        // Alternative: check for created_by column
+        $col_check = $db->query("SHOW COLUMNS FROM stock_movements LIKE 'created_by'");
+        if ($col_check->num_rows > 0) {
+            $check_sql = "SELECT COUNT(*) as count FROM stock_movements WHERE created_by = ?";
+            $check_stmt = $db->prepare($check_sql);
+            $check_stmt->bind_param("i", $delete_id);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            $count = $check_result->fetch_assoc();
+            if ($count['count'] > 0) {
+                $has_relations = true;
+                $relation_errors[] = $count['count'] . " stock movement(s) created by this user";
+            }
+        }
+    }
+    
+    // Check activity_logs table if it exists and has user_id column
+    $table_check = $db->query("SHOW TABLES LIKE 'activity_logs'");
+    if ($table_check->num_rows > 0) {
+        $col_check = $db->query("SHOW COLUMNS FROM activity_logs LIKE 'user_id'");
+        if ($col_check->num_rows > 0) {
+            $check_sql = "SELECT COUNT(*) as count FROM activity_logs WHERE user_id = ?";
+            $check_stmt = $db->prepare($check_sql);
+            $check_stmt->bind_param("i", $delete_id);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            $count = $check_result->fetch_assoc();
+            if ($count['count'] > 0) {
+                $has_relations = true;
+                $relation_errors[] = $count['count'] . " activity log(s) by this user";
+            }
+        }
+    }
+    
+    // Check requisitions table if it exists
+    $table_check = $db->query("SHOW TABLES LIKE 'requisitions'");
+    if ($table_check->num_rows > 0) {
+        $col_check = $db->query("SHOW COLUMNS FROM requisitions LIKE 'requested_by'");
+        if ($col_check->num_rows > 0) {
+            $check_sql = "SELECT COUNT(*) as count FROM requisitions WHERE requested_by = ?";
+            $check_stmt = $db->prepare($check_sql);
+            $check_stmt->bind_param("i", $delete_id);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            $count = $check_result->fetch_assoc();
+            if ($count['count'] > 0) {
+                $has_relations = true;
+                $relation_errors[] = $count['count'] . " requisition(s) requested by this user";
+            }
+        }
+    }
+    
+    if ($has_relations) {
+        // Instead of deleting, deactivate the user
+        $sql = "UPDATE users SET status = 'inactive' WHERE id = ?";
+        $stmt = $db->prepare($sql);
+        $stmt->bind_param("i", $delete_id);
+        
+        if ($stmt->execute()) {
+            $error_list = implode(", ", $relation_errors);
+            logActivity($user_id, 'Deactivate User', "User ID $delete_id deactivated instead of deleted due to existing records: $error_list");
+            $_SESSION['toast_message'] = "User cannot be deleted because they have existing records. User has been deactivated instead.<br><small>Related records: " . htmlspecialchars($error_list) . "</small>";
+            $_SESSION['toast_type'] = "warning";
+        } else {
+            $_SESSION['toast_message'] = "Error deactivating user!";
+            $_SESSION['toast_type'] = "error";
+        }
+    } else {
+        // No related records, safe to delete
+        $user_sql = "SELECT username, fullname FROM users WHERE id = ?";
         $user_stmt = $db->prepare($user_sql);
         $user_stmt->bind_param("i", $delete_id);
         $user_stmt->execute();
@@ -52,16 +186,14 @@ if (isset($_GET['delete'])) {
         
         if ($stmt->execute()) {
             logActivity($user_id, 'Delete User', "Deleted user: {$deleted_user['username']} (ID: $delete_id)");
-            $_SESSION['toast_message'] = "User deleted successfully!";
+            $_SESSION['toast_message'] = "User <strong>" . htmlspecialchars($deleted_user['fullname']) . "</strong> deleted successfully!";
             $_SESSION['toast_type'] = "success";
         } else {
-            $_SESSION['toast_message'] = "Error deleting user!";
+            $_SESSION['toast_message'] = "Error deleting user: " . $db->error;
             $_SESSION['toast_type'] = "error";
         }
-    } else {
-        $_SESSION['toast_message'] = "You cannot delete your own account!";
-        $_SESSION['toast_type'] = "error";
     }
+    
     header("Location: view_users.php");
     exit();
 }
@@ -130,7 +262,7 @@ include '../templates/sidebar.php';
             </button>
         </form>
         
-        <a href="add_user.php" class="btn-clear">
+        <a href="add_user.php" class="btn-add">
             <i class="fas fa-plus"></i> Add User
         </a>
     </div>
@@ -139,6 +271,7 @@ include '../templates/sidebar.php';
     <div class="card animate-fadeIn">
         <div class="card-header">
             <h3><i class="fas fa-users"></i> System Users (<?php echo count($users); ?>)</h3>
+            <p class="card-subtitle"><?php echo $search || $role_filter ? 'Filtered results' : 'All system users'; ?></p>
         </div>
         <div class="card-body">
             <div class="table-responsive">
@@ -167,7 +300,7 @@ include '../templates/sidebar.php';
                                             </div>
                                             <div>
                                                 <strong><?php echo htmlspecialchars($user['fullname']); ?></strong>
-                                                <div class="user-meta-sm"><?php echo date('d/m/Y', strtotime($user['created_at'])); ?></div>
+                                                <div class="user-meta-sm">Joined: <?php echo date('d/m/Y', strtotime($user['created_at'])); ?></div>
                                             </div>
                                         </div>
                                     </td>
@@ -193,13 +326,17 @@ include '../templates/sidebar.php';
                                             <a href="reset_password.php?id=<?php echo $user['id']; ?>" class="btn-icon key" title="Reset Password">
                                                 <i class="fas fa-key"></i>
                                             </a>
-                                            <a href="?toggle=<?php echo $user['id']; ?>" class="btn-icon toggle" title="Toggle Status">
-                                                <i class="fas fa-power-off"></i>
-                                            </a>
                                             <?php if($user['id'] != $_SESSION['user_id']): ?>
-                                                <a href="?delete=<?php echo $user['id']; ?>" class="btn-icon delete" title="Delete User" onclick="return confirmDelete('<?php echo addslashes($user['fullname']); ?>')">
+                                                <a href="?toggle=<?php echo $user['id']; ?>" class="btn-icon toggle" title="Toggle Status" onclick="return confirmToggle('<?php echo addslashes($user['fullname']); ?>', '<?php echo $user['status']; ?>')">
+                                                    <i class="fas fa-power-off"></i>
+                                                </a>
+                                                <a href="?delete=<?php echo $user['id']; ?>" class="btn-icon delete" title="Delete User" onclick="return confirmDelete('<?php echo addslashes($user['fullname']); ?>', <?php echo $user['id']; ?>)">
                                                     <i class="fas fa-trash"></i>
                                                 </a>
+                                            <?php else: ?>
+                                                <span class="self-action-note" title="You cannot modify your own status or delete yourself">
+                                                    <i class="fas fa-lock"></i>
+                                                </span>
                                             <?php endif; ?>
                                         </div>
                                     </td>
@@ -211,9 +348,13 @@ include '../templates/sidebar.php';
                                     <div class="empty-state">
                                         <i class="fas fa-users-slash"></i>
                                         <p>No users found</p>
-                                        <a href="add_user.php" class="btn-primary" style="margin-top: 10px;">Add First User</a>
+                                        <?php if($search || $role_filter): ?>
+                                            <a href="view_users.php" class="btn-clear" style="margin-top: 10px;">Clear Filters</a>
+                                        <?php else: ?>
+                                            <a href="add_user.php" class="btn-primary" style="margin-top: 10px;">Add First User</a>
+                                        <?php endif; ?>
                                     </div>
-                                </td
+                                </td>
                             </tr>
                         <?php endif; ?>
                     </tbody>
@@ -309,6 +450,23 @@ include '../templates/sidebar.php';
         background: #E5E7EB;
     }
     
+    .btn-add {
+        padding: 10px 20px;
+        background: #FF6B6B;
+        color: white;
+        border-radius: 8px;
+        text-decoration: none;
+        transition: all 0.3s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .btn-add:hover {
+        background: #e55a5a;
+        transform: translateY(-2px);
+    }
+    
     .user-name-cell {
         display: flex;
         align-items: center;
@@ -328,7 +486,7 @@ include '../templates/sidebar.php';
     }
     
     .user-meta-sm {
-        font-size: 11px;
+        font-size: 10px;
         color: #9CA3AF;
         margin-top: 2px;
     }
@@ -399,8 +557,20 @@ include '../templates/sidebar.php';
     .btn-icon:hover { transform: translateY(-2px); }
     .btn-icon.edit:hover { background: #DBEAFE; color: #1E3A8A; }
     .btn-icon.key:hover { background: #FEF3C7; color: #D97706; }
-    .btn-icon.toggle:hover { background: #FEE2E2; color: #EF4444; }
+    .btn-icon.toggle:hover { background: #FEF3C7; color: #D97706; }
     .btn-icon.delete:hover { background: #FEE2E2; color: #DC2626; }
+    
+    .self-action-note {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        background: #F3F4F6;
+        border-radius: 6px;
+        color: #9CA3AF;
+        cursor: not-allowed;
+    }
     
     .empty-state {
         text-align: center;
@@ -454,6 +624,12 @@ include '../templates/sidebar.php';
         text-align: center;
     }
     
+    .card-subtitle {
+        font-size: 12px;
+        color: #6B7280;
+        margin-top: 5px;
+    }
+    
     @media (max-width: 768px) {
         .search-filter-bar {
             flex-direction: column;
@@ -464,24 +640,44 @@ include '../templates/sidebar.php';
             flex-direction: column;
         }
         
-        .search-box, .filter-box select, .btn-search, .btn-clear {
+        .search-box, .filter-box select, .btn-search, .btn-clear, .btn-add {
             width: 100%;
         }
         
         .action-buttons {
             flex-wrap: wrap;
         }
+        
+        .table-responsive {
+            overflow-x: auto;
+        }
     }
 </style>
 
 <script>
-function confirmDelete(username) {
-    return confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone!`);
+function confirmDelete(username, userId) {
+    return confirm(`⚠️ WARNING: Are you sure you want to delete user "${username}"?\n\nThis action cannot be undone!\n\nIf this user has existing records (purchase orders, stock movements, etc.), they will be deactivated instead of deleted.`);
+}
+
+function confirmToggle(username, currentStatus) {
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    return confirm(`Are you sure you want to ${newStatus} user "${username}"?\n\n${newStatus === 'inactive' ? 'Inactive users cannot log in to the system.' : 'Active users can log in and access the system.'}`);
 }
 
 // Animate rows
 document.querySelectorAll('.user-row').forEach((row, index) => {
     row.style.animationDelay = `${index * 0.03}s`;
+});
+
+// Auto-hide toast after 5 seconds if exists
+document.addEventListener('DOMContentLoaded', function() {
+    const toasts = document.querySelectorAll('.toast-message');
+    toasts.forEach(toast => {
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 5000);
+    });
 });
 </script>
 

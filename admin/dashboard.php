@@ -43,7 +43,7 @@ include '../templates/sidebar.php';
 
 <div class="main-content">
     <div class="page-header">
-        <h1><i class="fas fa-shield-alt"></i> Admin Dashboard</h1>
+        
         <p>Welcome, <?php echo htmlspecialchars($_SESSION['fullname']); ?>! System overview and management</p>
     </div>
     

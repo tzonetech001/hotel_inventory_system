@@ -48,7 +48,7 @@ include 'header.php';
 <div class="dashboard">
     <div class="dashboard-header">
         <div>
-            <h1><i class="fas fa-chalkboard-user"></i> Department Dashboard</h1>
+            
             <p>Welcome back, <?php echo htmlspecialchars($_SESSION['department_user_name']); ?>!</p>
         </div>
         <div class="department-badge">

@@ -40,7 +40,7 @@ include '../templates/sidebar.php';
 
 <div class="main-content">
     <div class="page-header">
-        <h1><i class="fas fa-store"></i> Supplier Dashboard</h1>
+     
         <p>Welcome, <?php echo htmlspecialchars($supplier_name); ?>!</p>
     </div>
     

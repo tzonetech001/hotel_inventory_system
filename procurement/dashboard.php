@@ -42,7 +42,7 @@ include '../templates/sidebar.php';
 
 <div class="main-content">
     <div class="page-header">
-        <h1><i class="fas fa-shopping-cart"></i> Procurement Dashboard</h1>
+      
         <p>Welcome, <?php echo htmlspecialchars($_SESSION['fullname']); ?>! Manage purchase orders</p>
     </div>
     
@@ -176,19 +176,19 @@ include '../templates/sidebar.php';
                         <?php foreach($recent_pos as $po): ?>
                             <tr>
                                 <td><strong><?php echo $po['po_number']; ?></strong></td>
-                                <td><?php echo htmlspecialchars($po['company_name']); ?></td
+                                <td><?php echo htmlspecialchars($po['company_name']); ?></td>   
                                 <td><?php echo date('d M Y', strtotime($po['order_date'])); ?></td>
                                 <td>TZS <?php echo number_format($po['total_amount'], 2); ?></td>
                                 <td>
                                     <span class="status-badge status-<?php echo $po['status']; ?>">
                                         <?php echo ucfirst($po['status']); ?>
                                     </span>
-                                 </td
+                        </td>
                                 <td>
                                     <a href="view_po.php" class="btn-icon">
                                         <i class="fas fa-eye"></i>
                                     </a>
-                                 </td
+                                 </td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
