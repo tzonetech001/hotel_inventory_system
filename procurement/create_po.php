@@ -8,16 +8,16 @@ require_once '../includes/auth_check.php';
 checkAuth(['Procurement Officer', 'Hotel Manager']);
 
 // ============================================
-// SMS FUNCTIONS - Same as your working SMS sender
+// SMS FUNCTIONS - FIXED
 // ============================================
 
-// Beem API credentials (same as your working file)
-$sms_api_key = "386bdc07eae64a5";
+// Beem API credentials - FROM WORKING parent_sms_results.php
+$sms_api_key = "386bdc07eae64a53";
 $sms_secret_key = "NWJmNmZkYTdhODRkYmFhNDY1YjQ4Mzg2NzBiNjEzNzYzMDU0OGE4MWUzOWM5Yjc2OTI5ZDAwNDZiYmQ1ZDY4NA==";
-$sms_sender_id = "TZONE";
 
+$sms_sender_id = "TZONE";
 /**
- * Send SMS using Beem API - EXACT same as your working file
+ * Send SMS using Beem API - NO EMOJI
  */
 function sendSMS($phone, $message) {
     global $sms_api_key, $sms_secret_key, $sms_sender_id;
@@ -25,24 +25,41 @@ function sendSMS($phone, $message) {
     // Clean phone number
     $phone = preg_replace('/[^0-9]/', '', $phone);
     
-    // Convert to Beem format
+    // Convert to Beem format (255XXXXXXXXX)
     if (substr($phone, 0, 1) == '0') {
         $phone = '255' . substr($phone, 1);
-    } elseif (substr($phone, 0, 3) == '+255') {
-        $phone = substr($phone, 1);
+    } elseif (substr($phone, 0, 3) == '255') {
+        // Already correct
+    } elseif (strlen($phone) == 9 && ($phone[0] == '7' || $phone[0] == '6')) {
+        $phone = '255' . $phone;
+    } elseif (strlen($phone) == 10 && ($phone[0] == '7' || $phone[0] == '6')) {
+        $phone = '255' . $phone;
     }
     
-    // Validate phone
+    // Validate
     if (strlen($phone) != 12 || substr($phone, 0, 3) != '255') {
-        return ['success' => false, 'message' => 'Invalid phone number'];
+        error_log("❌ Invalid phone: $phone");
+        return ['success' => false, 'message' => "Invalid phone: $phone"];
     }
     
-    // Limit message length
+    // Remove ALL emoji and special characters
+    $message = preg_replace('/[^\x20-\x7E\x0A\x0D]/', '', $message);
+    $message = str_replace('✅', '[APPROVED]', $message);
+    $message = str_replace('❌', '[REJECTED]', $message);
+    $message = str_replace('🔔', '[NOTIFICATION]', $message);
+    $message = str_replace('📱', '', $message);
+    $message = str_replace('⭐', '', $message);
+    $message = str_replace('★', '', $message);
+    $message = str_replace('•', '-', $message);
+    $message = str_replace('→', '->', $message);
+    $message = str_replace('⚠️', '[WARNING]', $message);
+    
+    // Limit message
     if (strlen($message) > 160) {
-        $message = substr($message, 0, 160);
+        $message = substr($message, 0, 157) . '...';
     }
     
-    // Prepare data for Beem API
+    // Prepare data
     $postData = [
         'source_addr' => $sms_sender_id,
         'encoding' => 0,
@@ -52,7 +69,10 @@ function sendSMS($phone, $message) {
         ]
     ];
     
-    // Send to Beem API
+    error_log("📤 Sending SMS to: $phone");
+    error_log("📝 Message: " . substr($message, 0, 100));
+    
+    // Send
     $ch = curl_init();
     curl_setopt_array($ch, [
         CURLOPT_URL => 'https://apisms.beem.africa/v1/send',
@@ -70,36 +90,80 @@ function sendSMS($phone, $message) {
     
     $response = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_error = curl_error($ch);
     curl_close($ch);
+    
+    error_log("📥 HTTP: $http_code");
+    error_log("📥 Response: " . substr($response, 0, 200));
+    
+    if ($curl_error) {
+        return ['success' => false, 'message' => 'CURL Error: ' . $curl_error];
+    }
     
     if ($http_code == 200) {
         $result = json_decode($response, true);
-        if (isset($result['successful']) && $result['successful']) {
+        if (isset($result['successful']) && $result['successful'] === true) {
+            error_log("✅ SMS SUCCESS - Phone: $phone");
             return ['success' => true, 'message' => 'SMS sent successfully'];
         } else {
-            return ['success' => false, 'message' => 'Beem API: ' . ($result['message'] ?? 'Unknown error')];
+            $error_msg = isset($result['message']) ? $result['message'] : 'Unknown error';
+            error_log("❌ Beem Error: $error_msg");
+            return ['success' => false, 'message' => "Beem Error: $error_msg"];
         }
     } else {
-        return ['success' => false, 'message' => 'HTTP Error: ' . $http_code];
+        $result = json_decode($response, true);
+        $error_msg = isset($result['message']) ? $result['message'] : "HTTP Error: $http_code";
+        error_log("❌ HTTP Error: $error_msg");
+        return ['success' => false, 'message' => $error_msg];
     }
 }
 
 /**
- * Get users by role
+ * GET HOTEL MANAGERS - Using role_name directly
  */
-function getUsersByRole($role) {
+function getHotelManagers() {
     global $db;
-    $sql = "SELECT u.id, u.fullname, u.phone FROM users u 
+    
+    // Get Hotel Managers using role_name = 'Hotel Manager'
+    $sql = "SELECT u.id, u.fullname, u.phone, u.email 
+            FROM users u 
             JOIN roles r ON u.role_id = r.id 
-            WHERE r.role_name = ? AND u.status = 'active' AND u.phone IS NOT NULL AND u.phone != ''";
-    $stmt = $db->prepare($sql);
-    $stmt->bind_param("s", $role);
-    $stmt->execute();
-    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            WHERE r.role_name = 'Hotel Manager' 
+            AND u.status = 'active' 
+            AND u.phone IS NOT NULL 
+            AND u.phone != ''";
+    
+    $result = $db->query($sql);
+    $managers = $result->fetch_all(MYSQLI_ASSOC);
+    
+    error_log("📋 Found " . count($managers) . " Hotel Manager(s) with phone numbers");
+    foreach ($managers as $manager) {
+        error_log("  - ID: {$manager['id']}, Name: {$manager['fullname']}, Phone: {$manager['phone']}");
+    }
+    
+    return $managers;
 }
 
 /**
- * Get supplier contact
+ * Get Storekeepers
+ */
+function getStorekeepers() {
+    global $db;
+    
+    $sql = "SELECT u.id, u.fullname, u.phone, u.email 
+            FROM users u 
+            JOIN roles r ON u.role_id = r.id 
+            WHERE r.role_name = 'Storekeeper' 
+            AND u.status = 'active' 
+            AND u.phone IS NOT NULL 
+            AND u.phone != ''";
+    
+    $result = $db->query($sql);
+    return $result->fetch_all(MYSQLI_ASSOC);
+}
+
+/**
+ * Get Supplier Contact
  */
 function getSupplierContact($supplier_id) {
     global $db;
@@ -107,30 +171,55 @@ function getSupplierContact($supplier_id) {
     $stmt = $db->prepare($sql);
     $stmt->bind_param("i", $supplier_id);
     $stmt->execute();
-    return $stmt->get_result()->fetch_assoc();
+    $result = $stmt->get_result();
+    return $result->fetch_assoc();
 }
 
 /**
- * Send SMS to Hotel Manager for approval
+ * Send SMS to Hotel Managers for approval
  */
 function sendPOApprovalRequest($po_data) {
-    $managers = getUsersByRole('Hotel Manager');
-    if (empty($managers)) return false;
+    $managers = getHotelManagers();
     
-    $message = "🔔 TAARIFA YA UNUNUZI\n";
+    if (empty($managers)) {
+        error_log("❌ NO HOTEL MANAGERS FOUND! Please add Hotel Managers with phone numbers.");
+        return ['success' => false, 'sent' => 0, 'failed' => 0, 'message' => 'No managers found'];
+    }
+    
+    $message = "[NOTIFICATION] PURCHASE ORDER AWAITING APPROVAL\n";
     $message .= "PO: {$po_data['po_number']}\n";
-    $message .= "Muuzaji: {$po_data['supplier_name']}\n";
-    $message .= "Thamani: TZS " . number_format($po_data['total_amount'], 0) . "\n";
-    $message .= "Aliyeomba: {$po_data['created_by_name']}\n";
-    $message .= "Tafadhali ingia mfumo kukubali au kukataa.\n";
-    $message .= "- TZONE Hotel";
+    $message .= "Supplier: {$po_data['supplier_name']}\n";
+    $message .= "Amount: TZS " . number_format($po_data['total_amount'], 0) . "\n";
+    $message .= "Requested by: {$po_data['created_by_name']}\n";
+    $message .= "Please login to approve or reject.";
+    
+    $sent = 0;
+    $failed = 0;
+    $details = [];
     
     foreach ($managers as $manager) {
         if (!empty($manager['phone'])) {
-            sendSMS($manager['phone'], $message);
+            error_log("📱 Sending to Manager: {$manager['fullname']} ({$manager['phone']})");
+            $result = sendSMS($manager['phone'], $message);
+            
+            if ($result['success']) {
+                $sent++;
+                error_log("✅ Sent to: {$manager['fullname']}");
+                $details[] = "✅ {$manager['fullname']} - Sent";
+            } else {
+                $failed++;
+                error_log("❌ Failed to: {$manager['fullname']} - {$result['message']}");
+                $details[] = "❌ {$manager['fullname']} - {$result['message']}";
+            }
+        } else {
+            error_log("⚠️ {$manager['fullname']} - No phone number");
+            $failed++;
+            $details[] = "⚠️ {$manager['fullname']} - No phone";
         }
     }
-    return true;
+    
+    error_log("📊 Manager SMS: Sent=$sent, Failed=$failed");
+    return ['success' => $sent > 0, 'sent' => $sent, 'failed' => $failed, 'details' => $details];
 }
 
 /**
@@ -138,20 +227,25 @@ function sendPOApprovalRequest($po_data) {
  */
 function sendPOStatusToSupplier($po_data, $status, $reason = null) {
     $supplier = getSupplierContact($po_data['supplier_id']);
-    if (!$supplier || empty($supplier['phone'])) return false;
+    
+    if (!$supplier || empty($supplier['phone'])) {
+        error_log("❌ Supplier has no phone");
+        return ['success' => false, 'message' => 'Supplier has no phone'];
+    }
+    
+    error_log("📱 Sending to Supplier: {$supplier['company_name']} ({$supplier['phone']})");
     
     if ($status == 'approved') {
-        $message = "✅ PO IMESHAIDHINISHWA!\n\n";
-        $message .= "Namba ya PO: {$po_data['po_number']}\n";
-        $message .= "Jumla: TZS " . number_format($po_data['total_amount'], 0) . "\n\n";
-        $message .= "Endelea na utayarishaji wa bidhaa.\n";
-        $message .= "Asante - TZONE Hotel";
+        $message = "[APPROVED] PURCHASE ORDER APPROVED!\n\n";
+        $message .= "PO Number: {$po_data['po_number']}\n";
+        $message .= "Total Amount: TZS " . number_format($po_data['total_amount'], 0) . "\n\n";
+        $message .= "Please proceed with preparing the goods.\n";
+        $message .= "Thank you - TZONE Hotel";
     } else {
-        $message = "❌ PO IMERUDIWA!\n\n";
-        $message .= "Namba ya PO: {$po_data['po_number']}\n";
-        $message .= "Sababu: " . ($reason ?? "Hakuna sababu iliyotolewa") . "\n\n";
-        $message .= "Wasiliana na ofisi ya ununuzi.\n";
-        $message .= "- TZONE Hotel";
+        $message = "[REJECTED] PURCHASE ORDER REJECTED!\n\n";
+        $message .= "PO Number: {$po_data['po_number']}\n";
+        $message .= "Reason: " . ($reason ?? "No reason provided") . "\n\n";
+        $message .= "Please contact procurement office.";
     }
     
     return sendSMS($supplier['phone'], $message);
@@ -161,30 +255,54 @@ function sendPOStatusToSupplier($po_data, $status, $reason = null) {
  * Send SMS to Storekeeper
  */
 function sendPOStatusToStorekeeper($po_data, $status, $reason = null) {
-    $storekeepers = getUsersByRole('Storekeeper');
-    if (empty($storekeepers)) return false;
+    $storekeepers = getStorekeepers();
+    
+    if (empty($storekeepers)) {
+        error_log("❌ No Storekeepers found");
+        return ['success' => false, 'sent' => 0];
+    }
     
     if ($status == 'approved') {
-        $message = "✅ PO IMESHAIDHINISHWA!\n\n";
+        $message = "[APPROVED] PURCHASE ORDER APPROVED!\n\n";
         $message .= "PO: {$po_data['po_number']}\n";
-        $message .= "Muuzaji: {$po_data['supplier_name']}\n";
-        $message .= "Jumla: TZS " . number_format($po_data['total_amount'], 0) . "\n\n";
-        $message .= "Bidhaa zitakapowasili, thibitisha kwenye mfumo.\n";
-        $message .= "- TZONE Hotel";
+        $message .= "Supplier: {$po_data['supplier_name']}\n";
+        $message .= "Amount: TZS " . number_format($po_data['total_amount'], 0) . "\n\n";
+        $message .= "Please verify goods upon delivery.";
     } else {
-        $message = "❌ PO IMERUDIWA!\n\n";
+        $message = "[REJECTED] PURCHASE ORDER REJECTED!\n\n";
         $message .= "PO: {$po_data['po_number']}\n";
-        $message .= "Muuzaji: {$po_data['supplier_name']}\n";
-        $message .= "Sababu: " . ($reason ?? "Hakuna sababu") . "\n\n";
-        $message .= "- TZONE Hotel";
+        $message .= "Supplier: {$po_data['supplier_name']}\n";
+        $message .= "Reason: " . ($reason ?? "No reason");
     }
     
+    $sent = 0;
     foreach ($storekeepers as $storekeeper) {
         if (!empty($storekeeper['phone'])) {
-            sendSMS($storekeeper['phone'], $message);
+            error_log("📱 Sending to Storekeeper: {$storekeeper['fullname']} ({$storekeeper['phone']})");
+            $result = sendSMS($storekeeper['phone'], $message);
+            if ($result['success']) {
+                $sent++;
+                error_log("✅ Sent to Storekeeper: {$storekeeper['fullname']}");
+            } else {
+                error_log("❌ Failed to Storekeeper: {$storekeeper['fullname']} - {$result['message']}");
+            }
         }
     }
-    return true;
+    
+    return ['success' => $sent > 0, 'sent' => $sent];
+}
+
+// ============================================
+// TEST SMS - Direct test
+// ============================================
+
+if (isset($_GET['test_sms'])) {
+    header('Content-Type: application/json');
+    $phone = $_GET['phone'] ?? '0712345678';
+    $message = "TEST SMS from TZONE Hotel. If you receive this, SMS is working! Time: " . date('Y-m-d H:i:s');
+    $result = sendSMS($phone, $message);
+    echo json_encode($result);
+    exit();
 }
 
 // ============================================
@@ -211,13 +329,6 @@ $low_stock_items = $items_result->fetch_all(MYSQLI_ASSOC);
 $all_items_sql = "SELECT id, item_name, unit, unit_price, supplier_id FROM inventory_items WHERE status = 'active' ORDER BY item_name";
 $all_items_result = $db->query($all_items_sql);
 $all_items = $all_items_result->fetch_all(MYSQLI_ASSOC);
-
-// Get recent POs
-$recent_pos_sql = "SELECT po_number, supplier_id, created_at FROM purchase_orders WHERE created_by = ? ORDER BY created_at DESC LIMIT 5";
-$recent_stmt = $db->prepare($recent_pos_sql);
-$recent_stmt->bind_param("i", $user_id);
-$recent_stmt->execute();
-$recent_pos = $recent_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['create_po'])) {
     $supplier_id = intval($_POST['supplier_id']);
@@ -313,21 +424,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['create_po'])) {
                 'created_by_name' => $_SESSION['fullname'] ?? 'Unknown'
             ];
             
-            // If auto-approved by manager
-            if ($auto_approve) {
-                $approve_sql = "UPDATE purchase_orders SET approved_by = ?, approved_at = NOW() WHERE id = ?";
-                $approve_stmt = $db->prepare($approve_sql);
-                $approve_stmt->bind_param("ii", $user_id, $po_id);
-                $approve_stmt->execute();
-                
-                // Send SMS notifications
-                sendPOStatusToSupplier($po_data_for_sms, 'approved');
-                sendPOStatusToStorekeeper($po_data_for_sms, 'approved');
-            } else {
-                // Send SMS to Hotel Manager for approval
-                sendPOApprovalRequest($po_data_for_sms);
-            }
-            
             // Insert PO items
             foreach ($po_items as $item) {
                 $sql = "INSERT INTO po_items (po_id, item_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?)";
@@ -336,15 +432,49 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['create_po'])) {
                 $stmt->execute();
             }
             
+            // SMS Results
+            $sms_results = [];
+            
+            // If auto-approved by manager
+            if ($auto_approve) {
+                $approve_sql = "UPDATE purchase_orders SET approved_by = ?, approved_at = NOW() WHERE id = ?";
+                $approve_stmt = $db->prepare($approve_sql);
+                $approve_stmt->bind_param("ii", $user_id, $po_id);
+                $approve_stmt->execute();
+                
+                error_log("=== AUTO-APPROVED PO: $po_number ===");
+                
+                $supplier_result = sendPOStatusToSupplier($po_data_for_sms, 'approved');
+                $sms_results['supplier'] = $supplier_result;
+                
+                $storekeeper_result = sendPOStatusToStorekeeper($po_data_for_sms, 'approved');
+                $sms_results['storekeeper'] = $storekeeper_result;
+            } else {
+                error_log("=== PO CREATED: $po_number - Sending to Managers ===");
+                $manager_result = sendPOApprovalRequest($po_data_for_sms);
+                $sms_results['managers'] = $manager_result;
+            }
+            
             $db->commit();
             
             logActivity($user_id, 'Create PO', "Created purchase order: $po_number" . ($auto_approve ? " (Auto-approved)" : ""));
             
+            // Build toast message
+            $toast_msg = "Purchase Order <strong>$po_number</strong> created successfully!";
+            
             if ($auto_approve) {
-                $_SESSION['toast_message'] = "Purchase Order <strong>$po_number</strong> created and approved successfully! SMS sent to supplier and storekeeper.";
+                $toast_msg .= "<br>SMS: Supplier " . ($sms_results['supplier']['success'] ? 'Sent' : 'Failed');
+                $toast_msg .= " | Storekeeper " . ($sms_results['storekeeper']['success'] ? 'Sent' : 'Failed');
             } else {
-                $_SESSION['toast_message'] = "Purchase Order <strong>$po_number</strong> created successfully! SMS sent to manager for approval.";
+                $sent_count = $sms_results['managers']['sent'] ?? 0;
+                $failed_count = $sms_results['managers']['failed'] ?? 0;
+                $toast_msg .= "<br>SMS: " . ($sent_count > 0 ? "Sent to $sent_count manager(s)" : "Failed");
+                if ($failed_count > 0) {
+                    $toast_msg .= " (Failed: $failed_count)";
+                }
             }
+            
+            $_SESSION['toast_message'] = $toast_msg;
             $_SESSION['toast_type'] = "success";
             
             header("Location: view_po.php");
@@ -352,7 +482,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['create_po'])) {
             
         } catch (Exception $e) {
             $db->rollback();
-            $_SESSION['toast_message'] = "Error creating purchase order: " . $e->getMessage();
+            error_log("PO Error: " . $e->getMessage());
+            $_SESSION['toast_message'] = "Error: " . $e->getMessage();
             $_SESSION['toast_type'] = "error";
         }
     }
@@ -362,15 +493,37 @@ include '../templates/header.php';
 include '../templates/sidebar.php';
 ?>
 
-
-
+<!-- HTML CODE REMAINS THE SAME -->
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-file-invoice"></i> Create Purchase Order</h1>
-        <p>Create new purchase order for inventory replenishment - You can adjust prices as needed</p>
+        <p>Create new purchase order for inventory replenishment</p>
+    </div>
+    
+    <!-- Debug: Show Hotel Managers -->
+    <div class="card" style="border-left: 4px solid #10B981; margin-bottom: 20px;">
+        <div class="card-header" style="background: #F0FDF4;">
+            <h3 style="color: #065F46;"><i class="fas fa-users"></i> Hotel Managers with Phone Numbers</h3>
+        </div>
+        <div class="card-body">
+            <?php
+            $managers = getHotelManagers();
+            if (empty($managers)) {
+                echo '<p style="color: #EF4444;">❌ No Hotel Managers found with phone numbers! Please add Hotel Managers.</p>';
+                echo '<p><small>Run this SQL: UPDATE users SET phone = "0712345679" WHERE role_id = 2;</small></p>';
+            } else {
+                echo '<ul>';
+                foreach ($managers as $m) {
+                    echo '<li><strong>' . htmlspecialchars($m['fullname']) . '</strong> - Phone: ' . htmlspecialchars($m['phone']) . ' - Email: ' . htmlspecialchars($m['email']) . '</li>';
+                }
+                echo '</ul>';
+            }
+            ?>
+        </div>
     </div>
     
     <div class="two-column-layout">
+        <!-- Rest of the form remains the same -->
         <div class="form-column">
             <div class="card animate-card">
                 <div class="card-header">
@@ -393,6 +546,11 @@ include '../templates/sidebar.php';
                                     <option value="<?php echo $supplier['id']; ?>">
                                         <?php echo htmlspecialchars($supplier['company_name']); ?> 
                                         (<?php echo htmlspecialchars($supplier['contact_person'] ?? 'No contact'); ?>)
+                                        <?php if(!empty($supplier['phone'])): ?>
+                                            - Phone: <?php echo htmlspecialchars($supplier['phone']); ?>
+                                        <?php else: ?>
+                                            - No phone
+                                        <?php endif; ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -490,6 +648,7 @@ include '../templates/sidebar.php';
                         <li><i class="fas fa-calendar"></i> Set realistic expected delivery dates</li>
                         <li><i class="fas fa-list"></i> Low stock items are automatically added</li>
                         <li><i class="fas fa-envelope"></i> SMS notifications are sent automatically</li>
+                        <li><i class="fas fa-phone"></i> Make sure Hotel Managers have phone numbers</li>
                         <?php if($user_role == 'Hotel Manager'): ?>
                             <li><i class="fas fa-star"></i> As Manager, you can auto-approve POs</li>
                         <?php else: ?>
@@ -513,6 +672,9 @@ include '../templates/sidebar.php';
                         $pending_result = $db->query($pending_sql);
                         $pending_count = $pending_result->fetch_assoc()['count'];
                     }
+                    
+                    $managers = getHotelManagers();
+                    $storekeepers = getStorekeepers();
                     ?>
                     <div class="stat-row">
                         <span class="stat-label">Active Suppliers:</span>
@@ -528,12 +690,25 @@ include '../templates/sidebar.php';
                         <span class="stat-number <?php echo $pending_count > 0 ? 'pending' : ''; ?>"><?php echo $pending_count; ?></span>
                     </div>
                     <?php endif; ?>
+                    <div class="stat-row">
+                        <span class="stat-label">Managers with Phone:</span>
+                        <span class="stat-number" style="font-size:14px; <?php echo count($managers) == 0 ? 'color:#EF4444;' : 'color:#10B981;'; ?>">
+                            <?php echo count($managers); ?>
+                            <?php if(count($managers) == 0): ?>
+                                ⚠️
+                            <?php endif; ?>
+                        </span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Storekeepers with Phone:</span>
+                        <span class="stat-number" style="font-size:14px; <?php echo count($storekeepers) == 0 ? 'color:#EF4444;' : 'color:#10B981;'; ?>">
+                            <?php echo count($storekeepers); ?>
+                        </span>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    
-    <select id="itemTemplate" style="display: none;"></select>
 </div>
 
 <style>
@@ -598,6 +773,7 @@ include '../templates/sidebar.php';
 </style>
 
 <script>
+// JavaScript remains the same as before
 const allItems = <?php echo json_encode($all_items); ?>;
 const lowStockItems = <?php echo json_encode($low_stock_items); ?>;
 let hasPriceChanges = false;
